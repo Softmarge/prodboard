@@ -1,0 +1,65 @@
+import { z } from "zod";
+import { prisma } from "@/lib/db";
+import { withAuth, json, error, canWrite } from "@/lib/api";
+
+export const runtime = "nodejs";
+
+const STATUSES = ["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "COMPLETE"] as const;
+
+// Post a progress update: optional status change, optional note, optional blocker edit.
+const Body = z.object({
+  status: z.enum(STATUSES).optional(),
+  note: z.string().max(1000).optional(),
+  blocker: z.string().max(400).optional(),
+});
+
+export const POST = withAuth(async (user, req, params) => {
+  if (!canWrite(user)) return error("You do not have permission to update tasks.", 403);
+  const task = await prisma.task.findFirst({ where: { id: params.id, organizationId: user.oid } });
+  if (!task) return error("Task not found.", 404);
+
+  let data;
+  try {
+    data = Body.parse(await req.json());
+  } catch {
+    return error("Invalid update.");
+  }
+
+  const note = data.note?.trim() || "";
+  const blockerChanged = data.blocker !== undefined && (data.blocker.trim() || "") !== (task.blocker || "");
+  const statusChanged = data.status !== undefined && data.status !== task.status;
+
+  if (!statusChanged && !note && !blockerChanged) {
+    return error("Nothing to post, change the status, add a note, or edit the blocker.");
+  }
+
+  const patch: Record<string, unknown> = {};
+  if (statusChanged) patch.status = data.status;
+  if (blockerChanged) patch.blocker = data.blocker!.trim() || null;
+
+  await prisma.$transaction(async (tx: any) => {
+    if (Object.keys(patch).length) {
+      await tx.task.update({ where: { id: task.id }, data: patch });
+    }
+    if (statusChanged) {
+      await tx.activity.create({
+        data: {
+          type: "status",
+          taskId: task.id,
+          fromStatus: task.status,
+          toStatus: data.status,
+          author: user.name,
+          organizationId: user.oid,
+        },
+      });
+    }
+    if (note) {
+      await tx.activity.create({
+        data: { type: "note", taskId: task.id, content: note, author: user.name, organizationId: user.oid },
+      });
+    }
+  });
+
+  const updated = await prisma.task.findUnique({ where: { id: task.id } });
+  return json({ task: updated });
+});

@@ -1,0 +1,110 @@
+// Pending Deliverables Tracker, data model
+// Multi-tenant from day one: every record carries organizationId.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN // Lead PM, full control of the organization
+  PM    // Product Manager, create/manage products and tasks
+  VIEWER // read-only (e.g. CTO, stakeholders)
+}
+
+enum Status {
+  NOT_STARTED
+  IN_PROGRESS
+  IN_REVIEW
+  COMPLETE
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  teams     String[] // custom team/function names added beyond the defaults
+  createdAt DateTime @default(now())
+
+  users      User[]
+  products   Product[]
+  tasks      Task[]
+  activities Activity[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  name           String
+  passwordHash   String
+  role           Role         @default(PM)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+}
+
+model Product {
+  id             String       @id @default(cuid())
+  name           String // brand/base name, e.g. "Winbundle"
+  pm             String? // managing PM (display name)
+  type           String? // single platform type, e.g. "Mobile App"; display name = name + " " + type
+  decommissioned Boolean      @default(false) // retired, hidden from default views; never hard-deleted
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      String?
+  createdAt      DateTime     @default(now())
+
+  tasks Task[]
+
+  @@index([organizationId])
+}
+
+model Task {
+  id             String       @id @default(cuid())
+  title          String
+  productId      String?
+  product        Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  team           String
+  owner          String // person OR team/function (free text)
+  priority       Int          @default(2) // 1 = most important, 3 = least
+  status         Status       @default(IN_PROGRESS)
+  startDate      DateTime?
+  dueDate        DateTime
+  serviceRequest String?
+  blocker        String?
+  createdBy      String?
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  activities Activity[]
+
+  @@index([organizationId])
+  @@index([productId])
+}
+
+model Activity {
+  id             String       @id @default(cuid())
+  type           String // created | status | note | product
+  taskId         String?
+  task           Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskTitle      String?
+  fromStatus     String?
+  toStatus       String?
+  content        String?
+  author         String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ts             DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([taskId])
+  @@index([ts])
+}
