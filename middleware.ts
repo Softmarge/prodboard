@@ -3,7 +3,7 @@ import { readToken, SESSION_COOKIE } from "./lib/auth";
 
 // Protect the dashboard and the API (except auth endpoints). Uses jose only,
 // which is Edge-compatible; no Prisma or bcrypt here.
-const PUBLIC_API = ["/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/forgot", "/api/auth/reset"];
+const PUBLIC_API = ["/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/forgot", "/api/auth/reset", "/api/invite/"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

@@ -89,6 +89,7 @@ export default function Dashboard({ me }: { me: Me }) {
   const [prodCreateOpen, setProdCreateOpen] = useState(false);
   const [prodSettings, setProdSettings] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
   const flash = useCallback((m: string) => {
@@ -212,6 +213,7 @@ export default function Dashboard({ me }: { me: Me }) {
         </div>
         <div className="spacer" />
         <div className="whoami"><span><b>{me.name}</b></span><span className="rolepill">{me.role === "ADMIN" ? "Lead PM" : me.role === "PM" ? "PM" : "Viewer"}</span></div>
+        <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
         {isAdmin && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
         <button className="iconbtn" title="Toggle light / dark" onClick={toggleTheme} aria-label="Toggle theme">◐</button>
         <button className="btn ghost sm" onClick={logout}>Sign out</button>
@@ -295,6 +297,8 @@ export default function Dashboard({ me }: { me: Me }) {
           onSave={async (body) => { try { await api(`/api/products/${prodSettings}`, { method: "PATCH", body: JSON.stringify(body) }); setProdSettings(null); await reloadProducts(); flash("Product updated"); } catch (e) { flash((e as Error).message); } }}
           onDecom={async () => { const id = prodSettings; setProdSettings(null); await toggleDecom(id); }} />
       )}
+
+      {inviteOpen && <InviteModal isAdmin={isAdmin} onClose={() => setInviteOpen(false)} flash={flash} />}
 
       {membersOpen && <MembersModal meId={me.id} onClose={() => setMembersOpen(false)} flash={flash} />}
 
@@ -868,6 +872,51 @@ function ProductSettingsModal({ product, people, isAdmin, onClose, onSave, onDec
           <span style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={() => { if (!name.trim()) { setErr("Name can’t be empty."); return; } onSave({ name, pm }); }}>Save</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------- Invite ----------------
+function InviteModal({ isAdmin, onClose, flash }: { isAdmin: boolean; onClose: () => void; flash: (m: string) => void; }) {
+  const [url, setUrl] = useState("");
+  const [org, setOrg] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    (async () => { try { const d = await api("/api/invite"); setUrl(d.url); setOrg(d.organization); } catch (e) { flash((e as Error).message); } finally { setLoading(false); } })();
+  }, [flash]);
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); flash("Invite link copied"); }
+    catch { const el = document.getElementById("invite-url") as HTMLInputElement | null; if (el) { el.select(); } flash("Select and copy the link"); }
+  }
+  async function regenerate() {
+    if (!isAdmin) return;
+    setBusy(true);
+    try { const d = await api("/api/invite", { method: "POST" }); setUrl(d.url); flash("New link generated; the old one no longer works"); }
+    catch (e) { flash((e as Error).message); } finally { setBusy(false); }
+  }
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Invite colleagues</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          <p className="lead" style={{ marginBottom: 14 }}>Share this link with colleagues to invite them{org ? <> to <b>{org}</b></> : null}. Anyone who signs up through it joins your organization automatically, with the organization locked in.</p>
+          {loading ? <div className="hint">Loading…</div> : (
+            <>
+              <div className="field">
+                <label htmlFor="invite-url">Invite link</label>
+                <input id="invite-url" readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                {isAdmin && <button className="btn ghost sm" onClick={regenerate} disabled={busy}>Regenerate link</button>}
+                <button className="btn primary sm" onClick={copy}>Copy link</button>
+              </div>
+              <div className="hint" style={{ marginTop: 10 }}>New members join as PM or Viewer (their choice at signup). Change anyone’s role later under Members.{isAdmin ? " Regenerating invalidates the old link." : ""}</div>
+            </>
+          )}
         </div>
       </div>
     </>

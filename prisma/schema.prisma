@@ -25,10 +25,11 @@ enum Status {
 }
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  teams     String[] // custom team/function names added beyond the defaults
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  name        String   @unique
+  teams       String[] // custom team/function names added beyond the defaults
+  inviteToken String?  @unique // shareable token; anyone with the link joins this org
+  createdAt   DateTime @default(now())
 
   users      User[]
   products   Product[]
