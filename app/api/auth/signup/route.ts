@@ -2,13 +2,14 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { hashPassword, setSession } from "@/lib/auth";
 import { error, json } from "@/lib/api";
+import { passwordProblem } from "@/lib/password";
 
 export const runtime = "nodejs";
 
 const Body = z.object({
   name: z.string().min(1).max(120),
   email: z.string().email().max(200),
-  password: z.string().min(8).max(200),
+  password: z.string().max(200),
   organization: z.string().min(1).max(120),
   role: z.enum(["PM", "VIEWER"]).optional(),
 });
@@ -18,8 +19,11 @@ export async function POST(req: Request) {
   try {
     data = Body.parse(await req.json());
   } catch {
-    return error("Please fill in a name, a valid email, a password of at least 8 characters, and an organization.");
+    return error("Please fill in a name, a valid email, a password, and an organization.");
   }
+
+  const pwProblem = passwordProblem(data.password);
+  if (pwProblem) return error(pwProblem);
 
   const email = data.email.trim().toLowerCase();
   const orgName = data.organization.trim();

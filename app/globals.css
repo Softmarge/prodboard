@@ -225,3 +225,9 @@ table.sheet .due.late{color:var(--s-overdue);font-weight:600}
 .pdtask .meta{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:6px;color:var(--muted);font-size:12px}
 .pdtask .meta .who{color:var(--fg)}
 .card .tt-row .title{font-weight:600;min-width:0;line-height:1.3}
+
+/* ---- password field with show/hide toggle ---- */
+.pwwrap{position:relative}
+.pwwrap input{width:100%;padding-right:40px}
+.pweye{position:absolute;top:50%;right:6px;transform:translateY(-50%);width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;color:var(--muted);border-radius:6px;cursor:pointer}
+.pweye:hover{color:var(--fg);background:var(--surface-2)}

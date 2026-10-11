@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import PasswordInput from "@/app/components/PasswordInput";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -55,7 +56,10 @@ export default function LoginPage() {
           </div>
           <div className="field">
             <label htmlFor="password">Password</label>
-            <input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <PasswordInput id="password" autoComplete="current-password" value={password} onChange={setPassword} />
+            <div style={{ marginTop: 6, textAlign: "right" }}>
+              <Link href="/forgot" className="hint" style={{ color: "var(--accent)" }}>Forgot password?</Link>
+            </div>
           </div>
           {err && <div className="err">{err}</div>}
           <button className="btn primary" type="submit" disabled={busy} style={{ width: "100%", marginTop: 6 }}>
