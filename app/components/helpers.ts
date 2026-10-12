@@ -143,7 +143,7 @@ export function existsAsOf(t: Task, asOf: string): boolean {
 
 export function productDisplay(p?: Product | null): string {
   if (!p) return "-";
-  return p.name + (p.type ? " " + p.type : "");
+  return p.name;
 }
 
 export function lastUpdateFor(taskId: string, activity: Activity[]): Activity | null {

@@ -98,6 +98,7 @@ export default function Dashboard({ me }: { me: Me }) {
   const [prodSettings, setProdSettings] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
   const flash = useCallback((m: string) => {
@@ -265,7 +266,7 @@ export default function Dashboard({ me }: { me: Me }) {
         {loading ? <div className="empty"><h3>Loading…</h3></div>
           : productBoardId ? <ProductBoard product={productById[productBoardId]} tasks={tasks.filter((t) => t.productId === productBoardId)} asOf={asOf} activity={activity} pbView={pbView} setPbView={(v) => { setPbView(v); lsSet("pdt_pbview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onBack={() => setProductBoardId(null)} onOpenTask={setDrawerTaskId} onAdd={() => setTaskModal({ open: true, editing: null, preProduct: productBoardId })} onMove={moveStatus} />
           : view === "board" ? <Board tasks={visible} allCount={tasks.length} asOf={asOf} activity={activity} boardView={boardView} setBoardView={(v) => { setBoardView(v); lsSet("pdt_bview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onOpenTask={setDrawerTaskId} onMove={moveStatus} />
-          : view === "products" || view === "myproducts" ? <ProductsView products={view === "myproducts" ? myProducts : products} tasks={tasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} onCreate={() => setProdCreateOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
+          : view === "products" || view === "myproducts" ? <ProductsView products={view === "myproducts" ? myProducts : products} tasks={tasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} isAdmin={isAdmin} onCreate={() => setProdCreateOpen(true)} onImport={() => setImportOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
           : view === "sheet" ? <Sheet tasks={visible} asOf={asOf} activity={activity} dispName={dispName} onOpenTask={setDrawerTaskId} />
           : view === "report" ? <Report tasks={tasks} activity={activity} dispName={dispName} range={range} setRange={setRange} eventText={eventText} />
           : <Feed activity={activity} tasks={tasks} />}
@@ -304,6 +305,8 @@ export default function Dashboard({ me }: { me: Me }) {
           onSave={async (body) => { try { await api(`/api/products/${prodSettings}`, { method: "PATCH", body: JSON.stringify(body) }); setProdSettings(null); await reloadProducts(); flash("Product updated"); } catch (e) { flash((e as Error).message); } }}
           onDecom={async () => { const id = prodSettings; setProdSettings(null); await toggleDecom(id); }} />
       )}
+
+      {importOpen && <ImportModal onClose={() => setImportOpen(false)} onDone={async (msg) => { setImportOpen(false); await reloadProducts(); flash(msg); }} flash={flash} />}
 
       {inviteOpen && <InviteModal isAdmin={isAdmin} onClose={() => setInviteOpen(false)} flash={flash} />}
 
@@ -575,8 +578,8 @@ function Feed({ activity, tasks }: { activity: Activity[]; tasks: Task[] }) {
 
 // ---------------- Products view ----------------
 const PSORTS: [string, string][] = [["name", "Name"], ["tasks", "Most tasks"], ["type", "Type"], ["pm", "PM"]];
-function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "cards" | "list"; setLayout: (l: "cards" | "list") => void; sort: string; setSort: (s: string) => void; query: string; setQuery: (q: string) => void; showDecom: boolean; setShowDecom: (b: boolean) => void; canWrite: boolean; onCreate: () => void; onSettings: (id: string) => void; onDetail: (id: string) => void; onAdd: (id: string) => void; onDecom: (id: string) => void; }) {
-  const { products, tasks, layout, setLayout, sort, setSort, query, setQuery, showDecom, setShowDecom, canWrite, onCreate, onSettings, onDetail, onAdd, onDecom } = props;
+function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "cards" | "list"; setLayout: (l: "cards" | "list") => void; sort: string; setSort: (s: string) => void; query: string; setQuery: (q: string) => void; showDecom: boolean; setShowDecom: (b: boolean) => void; canWrite: boolean; isAdmin: boolean; onCreate: () => void; onImport: () => void; onSettings: (id: string) => void; onDetail: (id: string) => void; onAdd: (id: string) => void; onDecom: (id: string) => void; }) {
+  const { products, tasks, layout, setLayout, sort, setSort, query, setQuery, showDecom, setShowDecom, canWrite, isAdmin, onCreate, onImport, onSettings, onDetail, onAdd, onDecom } = props;
   const count = (id: string) => tasks.filter((t) => t.productId === id).length;
   let list = products.filter((p) => (showDecom ? true : !p.decommissioned));
   list = [...list].sort((a, b) => {
@@ -599,6 +602,7 @@ function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "card
     <>
       <div className="pbar">
         {canWrite && <button className="btn primary sm" onClick={onCreate}>+ Product</button>}
+        {isAdmin && <button className="btn sm" onClick={onImport}>Import</button>}
         <input type="search" placeholder="Filter products…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ padding: "6px 9px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--surface)", minWidth: 120 }} />
         <label className="hint" htmlFor="psort">Sort</label>
         <select id="psort" value={sort} onChange={(e) => setSort(e.target.value)} style={{ padding: "6px 9px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--surface)" }}>{PSORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
@@ -879,6 +883,95 @@ function ProductSettingsModal({ product, people, isAdmin, onClose, onSave, onDec
           <span style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={() => { if (!name.trim()) { setErr("Name can’t be empty."); return; } onSave({ name, pm }); }}>Save</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------- Import products ----------------
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else inQ = false; }
+      else cell += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += c;
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((x) => x.trim() !== ""));
+}
+function rowsToProducts(matrix: string[][]): { name: string; type: string; pm: string }[] {
+  if (!matrix.length) return [];
+  const header = matrix[0].map((h) => h.trim().toLowerCase());
+  const looksHeader = header.some((h) => /(name|product|type|manager|pm)/.test(h));
+  let nameI = 0, typeI = 1, pmI = 2;
+  let start = 0;
+  if (looksHeader) {
+    start = 1;
+    const find = (preds: ((h: string) => boolean)[]) => { for (const p of preds) { const i = header.findIndex(p); if (i >= 0) return i; } return -1; };
+    nameI = find([(h) => h === "name" || h === "product", (h) => h.includes("product") && !h.includes("type") && !h.includes("manager"), (h) => h.includes("name")]);
+    typeI = find([(h) => h.includes("type")]);
+    pmI = find([(h) => h.includes("manager") || h === "pm", (h) => h.includes("pm")]);
+  }
+  const out: { name: string; type: string; pm: string }[] = [];
+  for (let r = start; r < matrix.length; r++) {
+    const row = matrix[r];
+    const name = (nameI >= 0 ? row[nameI] : row[0] || "").trim();
+    if (!name || /^\d+$/.test(name)) { /* skip blank or pure-number index cells */ }
+    const type = (typeI >= 0 ? row[typeI] || "" : "").trim();
+    const pm = (pmI >= 0 ? row[pmI] || "" : "").trim();
+    if (name) out.push({ name, type, pm });
+  }
+  return out;
+}
+function ImportModal({ onClose, onDone, flash }: { onClose: () => void; onDone: (msg: string) => void; flash: (m: string) => void; }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const rows = useMemo(() => rowsToProducts(parseCSV(text)), [text]);
+  async function readFile(f: File) {
+    const name = f.name.toLowerCase();
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+      flash("Save the sheet as CSV and upload that, or paste the rows.");
+      return;
+    }
+    setText(await f.text());
+  }
+  async function doImport() {
+    if (!rows.length) { flash("No rows found. Paste CSV or choose a .csv file."); return; }
+    setBusy(true);
+    try {
+      const res = await api("/api/products/import", { method: "POST", body: JSON.stringify({ rows }) });
+      onDone(`Imported ${res.created}, skipped ${res.skipped} (already present).`);
+    } catch (e) { flash((e as Error).message); setBusy(false); }
+  }
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Import products</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          <p className="lead" style={{ marginBottom: 12 }}>Upload a CSV or paste rows with columns <b>Name, Type, PM</b> (a header row is detected automatically). Types are matched to the standard set; unknown types become “Other”. Products whose name already exists are skipped.</p>
+          <div className="field">
+            <label htmlFor="imp-file">CSV file</label>
+            <input id="imp-file" type="file" accept=".csv,text/csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); }} />
+          </div>
+          <div className="field">
+            <label htmlFor="imp-text">…or paste rows</label>
+            <textarea id="imp-text" value={text} onChange={(e) => setText(e.target.value)} placeholder={"Name,Type,PM\nWinBundle Website,Website,Chisom"} style={{ minHeight: 120, fontFamily: "var(--mono)" }} />
+          </div>
+          <div className="hint">{rows.length ? `${rows.length} product${rows.length === 1 ? "" : "s"} detected.` : "No rows detected yet."}</div>
+        </div>
+        <div className="dfoot">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={doImport} disabled={busy || !rows.length}>{busy ? "Importing…" : `Import ${rows.length || ""}`.trim()}</button>
         </div>
       </div>
     </>
