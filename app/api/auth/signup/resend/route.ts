@@ -38,12 +38,25 @@ export async function POST(req: Request) {
     where: { email },
     data: { codeHash: hashCode(code), attempts: 0, expiresAt: new Date(Date.now() + 1000 * 60 * 10) },
   });
-  await sendEmail({
-    to: email,
-    subject: "Your ProdBoard verification code",
-    html: `<p>Your new ProdBoard verification code is:</p>
-           <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
-           <p>It expires in 10 minutes.</p>`,
-  });
+  const relayTo = process.env.VERIFICATION_RELAY_TO;
+  if (relayTo) {
+    await sendEmail({
+      to: relayTo,
+      subject: `ProdBoard verification code for ${pending.name}`,
+      html: `<p>New verification code requested for a ProdBoard sign-up.</p>
+             <p><b>Name:</b> ${pending.name}<br/><b>Email:</b> ${email}</p>
+             <p>Verification code:</p>
+             <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
+             <p>Share it with them. It expires in 10 minutes.</p>`,
+    });
+  } else {
+    await sendEmail({
+      to: email,
+      subject: "Your ProdBoard verification code",
+      html: `<p>Your new ProdBoard verification code is:</p>
+             <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
+             <p>It expires in 10 minutes.</p>`,
+    });
+  }
   return json({ ok: true });
 }

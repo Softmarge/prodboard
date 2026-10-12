@@ -69,14 +69,29 @@ export async function POST(req: Request) {
   };
   await prisma.pendingSignup.upsert({ where: { email }, update: payload, create: payload });
 
-  const sent = await sendEmail({
-    to: email,
-    subject: "Your ProdBoard verification code",
-    html: `<p>Your ProdBoard verification code is:</p>
-           <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
-           <p>It expires in 10 minutes. If you did not request this, you can ignore this email.</p>`,
-  });
+  // While there is no verified sending domain, Resend can only deliver to the
+  // account owner. VERIFICATION_RELAY_TO routes every code to that one inbox,
+  // tagged with who is signing up, so an admin can relay it.
+  const relayTo = process.env.VERIFICATION_RELAY_TO;
+  const relayed = !!relayTo;
+  const sent = relayed
+    ? await sendEmail({
+        to: relayTo!,
+        subject: `ProdBoard verification code for ${payload.name}`,
+        html: `<p>New ProdBoard sign-up awaiting email verification.</p>
+               <p><b>Name:</b> ${payload.name}<br/><b>Email:</b> ${email}</p>
+               <p>Verification code:</p>
+               <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
+               <p>Share this code with them so they can finish signing up. It expires in 10 minutes.</p>`,
+      })
+    : await sendEmail({
+        to: email,
+        subject: "Your ProdBoard verification code",
+        html: `<p>Your ProdBoard verification code is:</p>
+               <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
+               <p>It expires in 10 minutes. If you did not request this, you can ignore this email.</p>`,
+      });
   if (!sent) return error("Could not send the verification email. Try again shortly.", 502);
 
-  return json({ ok: true, email });
+  return json({ ok: true, email, relayed });
 }

@@ -16,6 +16,7 @@ function SignupForm() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [resentMsg, setResentMsg] = useState("");
+  const [relayed, setRelayed] = useState(false);
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -52,7 +53,7 @@ function SignupForm() {
       });
       const data = await res.json();
       if (!res.ok) { setErr(data.error || "Sign up failed."); setBusy(false); return; }
-      setBusy(false); setStep("code"); setErr("");
+      setRelayed(!!data.relayed); setBusy(false); setStep("code"); setErr("");
     } catch { setErr("Network error. Try again."); setBusy(false); }
   }
 
@@ -90,7 +91,11 @@ function SignupForm() {
     return (
       <>
         <h1>Verify your email</h1>
-        <p className="lead">We sent a 4-digit code to <b>{form.email}</b>. Enter it to finish creating your account.</p>
+        <p className="lead">
+          {relayed
+            ? <>Your 4-digit code was sent to your workspace administrator for approval. Ask them for the code, then enter it here to finish creating your account.</>
+            : <>We sent a 4-digit code to <b>{form.email}</b>. Enter it to finish creating your account.</>}
+        </p>
         {resentMsg && <div className="banner-ok">{resentMsg}</div>}
         <form onSubmit={verifyCode}>
           <div className="field">
