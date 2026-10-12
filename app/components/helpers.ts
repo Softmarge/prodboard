@@ -146,6 +146,12 @@ export function productDisplay(p?: Product | null): string {
   return p.name;
 }
 
+// For <select> options only: disambiguates products that share a base name by
+// showing the type in parentheses. Not used for titles, cards, or the board.
+export function productOption(p: Product): string {
+  return p.type ? `${p.name} (${p.type})` : p.name;
+}
+
 export function lastUpdateFor(taskId: string, activity: Activity[]): Activity | null {
   let best: Activity | null = null;
   for (const a of activity) {

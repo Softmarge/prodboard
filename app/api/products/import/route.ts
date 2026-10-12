@@ -35,27 +35,24 @@ export const POST = withAuth(async (user, req) => {
   }
 
   const existing = await prisma.product.findMany({ where: { organizationId: user.oid } });
-  const existingNames = new Set(existing.map((p: any) => p.name.trim().toLowerCase()));
+  // A product is unique by name + type, so "WinBundle / Website" and
+  // "WinBundle / Mobile App" are distinct and both import.
+  const key = (n: string, t: string | null) => `${n.trim().toLowerCase()}|${(t || "").toLowerCase()}`;
+  const seen = new Set(existing.map((p: any) => key(p.name, p.type)));
 
   let created = 0;
   let skipped = 0;
-  const createdNames: string[] = [];
   for (const r of data.rows) {
     const name = r.name.trim();
+    const type = normType(r.type || "");
     if (!name) { skipped++; continue; }
-    if (existingNames.has(name.toLowerCase())) { skipped++; continue; }
-    existingNames.add(name.toLowerCase());
+    const k = key(name, type);
+    if (seen.has(k)) { skipped++; continue; }
+    seen.add(k);
     await prisma.product.create({
-      data: {
-        name,
-        type: normType(r.type || ""),
-        pm: r.pm?.trim() || null,
-        organizationId: user.oid,
-        createdBy: user.name,
-      },
+      data: { name, type, pm: r.pm?.trim() || null, organizationId: user.oid, createdBy: user.name },
     });
     created++;
-    createdNames.push(name);
   }
 
   if (created) {

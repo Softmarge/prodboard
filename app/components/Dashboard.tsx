@@ -23,6 +23,7 @@ import {
   lastUpdateFor,
   priorityOf,
   productDisplay,
+  productOption,
   relTime,
   statusMeta,
   todayYMD,
@@ -99,6 +100,7 @@ export default function Dashboard({ me }: { me: Me }) {
   const [membersOpen, setMembersOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
   const flash = useCallback((m: string) => {
@@ -219,7 +221,7 @@ export default function Dashboard({ me }: { me: Me }) {
           </div>
         </div>
         <div className="spacer" />
-        <div className="whoami"><span><b>{me.name}</b></span><span className="rolepill">{me.role === "ADMIN" ? "Lead PM" : me.role === "PM" ? "PM" : "Viewer"}</span></div>
+        <div className="whoami"><button className="linklike" style={{ fontWeight: 600, color: "var(--fg)" }} title="Edit your name" onClick={() => setProfileOpen(true)}>{me.name}</button><span className="rolepill">{me.role === "ADMIN" ? "Lead PM" : me.role === "PM" ? "PM" : "Viewer"}</span></div>
         <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
         {isAdmin && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
         <button className="iconbtn" title="Toggle light / dark" onClick={toggleTheme} aria-label="Toggle theme">◐</button>
@@ -240,7 +242,7 @@ export default function Dashboard({ me }: { me: Me }) {
           <div className="filterrow">
             <input type="search" placeholder="Search tasks…" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} />
             <select value={filters.team} onChange={(e) => setFilters({ ...filters, team: e.target.value })} aria-label="Team"><option value="">All teams</option>{teamOptions.map((t) => <option key={t} value={t}>{t}</option>)}</select>
-            <select value={filters.product} onChange={(e) => setFilters({ ...filters, product: e.target.value })} aria-label="Product"><option value="">All products</option>{[...products].sort((a, b) => productDisplay(a).localeCompare(productDisplay(b))).map((p) => <option key={p.id} value={p.id}>{productDisplay(p)}</option>)}</select>
+            <select value={filters.product} onChange={(e) => setFilters({ ...filters, product: e.target.value })} aria-label="Product"><option value="">All products</option>{[...products].sort((a, b) => productOption(a).localeCompare(productOption(b))).map((p) => <option key={p.id} value={p.id}>{productOption(p)}</option>)}</select>
             <select value={filters.owner} onChange={(e) => setFilters({ ...filters, owner: e.target.value })} aria-label="Owner"><option value="">All owners</option>{people.map((o) => <option key={o} value={o}>{o}</option>)}</select>
             <select value={filters.sr} onChange={(e) => setFilters({ ...filters, sr: e.target.value })} aria-label="Service request"><option value="">All requests</option>{srList.map((s) => <option key={s} value={s}>{s}</option>)}</select>
             {!isPM && <select value={filters.pm} onChange={(e) => setFilters({ ...filters, pm: e.target.value })} aria-label="PM"><option value="">All PMs</option>{pmList.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
@@ -305,6 +307,8 @@ export default function Dashboard({ me }: { me: Me }) {
           onSave={async (body) => { try { await api(`/api/products/${prodSettings}`, { method: "PATCH", body: JSON.stringify(body) }); setProdSettings(null); await reloadProducts(); flash("Product updated"); } catch (e) { flash((e as Error).message); } }}
           onDecom={async () => { const id = prodSettings; setProdSettings(null); await toggleDecom(id); }} />
       )}
+
+      {profileOpen && <ProfileModal currentName={me.name} onClose={() => setProfileOpen(false)} onSaved={async (msg) => { setProfileOpen(false); flash(msg); await loadAll(); router.refresh(); }} flash={flash} />}
 
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} onDone={async (msg) => { setImportOpen(false); await reloadProducts(); flash(msg); }} flash={flash} />}
 
@@ -746,7 +750,7 @@ function TaskModal({ editing, preProduct, products, teamOptions, people, srList,
             <div className="hint" style={{ marginTop: 4 }}>A request can have several tasks. Group them under the same request.</div>
           </div>
           <div className="field req"><label>Task (outcome)</label><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Ship USSD airtime purchase flow" /></div>
-          <div className="field req"><label>Product</label><select value={productId} disabled={lockProduct} onChange={(e) => setProductId(e.target.value)}>{liveProducts.length ? [...liveProducts].sort((a, b) => productDisplay(a).localeCompare(productDisplay(b))).map((p) => <option key={p.id} value={p.id}>{productDisplay(p)}</option>) : <option value="">No products yet</option>}</select></div>
+          <div className="field req"><label>Product</label><select value={productId} disabled={lockProduct} onChange={(e) => setProductId(e.target.value)}>{liveProducts.length ? [...liveProducts].sort((a, b) => productOption(a).localeCompare(productOption(b))).map((p) => <option key={p.id} value={p.id}>{productOption(p)}</option>) : <option value="">No products yet</option>}</select></div>
           <div className="two">
             <div className="field req"><label>Owner</label>
               <select value={ownerExisting || ownerSel === "__new__" ? ownerSel : (ownerSel ? ownerSel : "")} onChange={(e) => setOwnerSel(e.target.value)}>
@@ -884,6 +888,32 @@ function ProductSettingsModal({ product, people, isAdmin, onClose, onSave, onDec
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" onClick={() => { if (!name.trim()) { setErr("Name can’t be empty."); return; } onSave({ name, pm }); }}>Save</button>
         </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------- Profile (edit own name) ----------------
+function ProfileModal({ currentName, onClose, onSaved, flash }: { currentName: string; onClose: () => void; onSaved: (m: string) => void; flash: (m: string) => void; }) {
+  const [name, setName] = useState(currentName);
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    const n = name.trim();
+    if (!n) { flash("Enter a name."); return; }
+    setBusy(true);
+    try { await api("/api/me", { method: "PATCH", body: JSON.stringify({ name: n }) }); onSaved("Name updated"); }
+    catch (e) { flash((e as Error).message); setBusy(false); }
+  }
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Your profile</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          <div className="field"><label htmlFor="pf-name">Display name</label><input id="pf-name" value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="hint">Your name is how products are matched to you. If you manage products, set this to the exact PM name used on them (for example “Majesty”).</div>
+        </div>
+        <div className="dfoot"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</button></div>
       </div>
     </>
   );
@@ -1029,19 +1059,27 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
   const load = useCallback(async () => { try { setMembers((await api("/api/users")).users); } catch (e) { flash((e as Error).message); } finally { setLoading(false); } }, [flash]);
   useEffect(() => { load(); }, [load]);
   async function changeRole(id: string, role: Role) { try { await api("/api/users", { method: "PATCH", body: JSON.stringify({ userId: id, role }) }); await load(); flash("Role updated"); } catch (e) { flash((e as Error).message); } }
+  async function changeName(id: string, name: string, prev: string) {
+    const n = name.trim();
+    if (!n || n === prev) return;
+    try { await api("/api/users", { method: "PATCH", body: JSON.stringify({ userId: id, name: n }) }); await load(); flash("Name updated"); } catch (e) { flash((e as Error).message); await load(); }
+  }
   return (
     <>
       <div className="scrim" onClick={onClose} />
       <div className="modal" role="dialog" aria-modal="true">
         <div className="dhead"><h2>Members</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
-          <div className="hint" style={{ marginBottom: 10 }}>Admins manage everything. PMs create and update products and tasks. Viewers (e.g. the CTO) have read-only access.</div>
+          <div className="hint" style={{ marginBottom: 10 }}>Admins manage everything. PMs create and update products and tasks. Viewers (e.g. the CTO) have read-only access. A member’s name must match the PM name on their products for scoping to work.</div>
           {loading ? <div className="hint">Loading…</div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {members.map((m) => (
                 <div className="prow" key={m.id}>
                   <div className="prow-top">
-                    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{m.name} {m.id === meId ? <span className="hint">(you)</span> : null}</div><div className="hint">{m.email}</div></div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <input defaultValue={m.name} onBlur={(e) => changeName(m.id, e.target.value, m.name)} style={{ fontWeight: 600, width: "100%", padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface-2)" }} />
+                      <div className="hint">{m.email}{m.id === meId ? " · you" : ""}</div>
+                    </div>
                     <select value={m.role} onChange={(e) => changeRole(m.id, e.target.value as Role)} style={{ padding: "6px 8px", border: "1px solid var(--border-strong)", borderRadius: 6, background: "var(--surface)" }}>
                       <option value="ADMIN">Admin (Lead PM)</option><option value="PM">PM</option><option value="VIEWER">Viewer</option>
                     </select>
