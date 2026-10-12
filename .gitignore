@@ -10,3 +10,6 @@ build
 .vercel
 next-env.d.ts
 /prisma/dev.db
+
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
