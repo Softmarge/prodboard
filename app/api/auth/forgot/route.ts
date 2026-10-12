@@ -30,13 +30,26 @@ export async function POST(req: Request) {
 
     const origin = new URL(req.url).origin;
     const link = `${origin}/reset?token=${token}`;
-    await sendEmail({
-      to: email,
-      subject: "Reset your ProdBoard password",
-      html: `<p>We received a request to reset your ProdBoard password.</p>
-             <p><a href="${link}">Choose a new password</a>. This link expires in one hour.</p>
-             <p>If you did not request this, you can ignore this email.</p>`,
-    });
+    const relayTo = process.env.VERIFICATION_RELAY_TO;
+    if (relayTo) {
+      // No verified sending domain yet: relay the reset link to the admin inbox,
+      // tagged with who requested it, so they can pass it on.
+      await sendEmail({
+        to: relayTo,
+        subject: `ProdBoard password reset for ${user.name}`,
+        html: `<p>A ProdBoard password reset was requested.</p>
+               <p><b>Name:</b> ${user.name}<br/><b>Email:</b> ${email}</p>
+               <p><a href="${link}">Reset link</a> (expires in one hour). Share it with them.</p>`,
+      });
+    } else {
+      await sendEmail({
+        to: email,
+        subject: "Reset your ProdBoard password",
+        html: `<p>We received a request to reset your ProdBoard password.</p>
+               <p><a href="${link}">Choose a new password</a>. This link expires in one hour.</p>
+               <p>If you did not request this, you can ignore this email.</p>`,
+      });
+    }
   }
 
   return json({ ok: true });
