@@ -29,10 +29,10 @@ import {
 } from "./helpers";
 
 type Me = { id: string; name: string; email: string; role: Role };
-type MainView = "board" | "products" | "sheet" | "report" | "activity";
+type MainView = "board" | "myproducts" | "products" | "sheet" | "report" | "activity";
 type BoardView = "kanban" | "list" | "grid";
-type Filters = { q: string; team: string; product: string; owner: string; sr: string; status: string };
-const EMPTY_FILTERS: Filters = { q: "", team: "", product: "", owner: "", sr: "", status: "" };
+type Filters = { q: string; team: string; product: string; owner: string; sr: string; status: string; pm: string };
+const EMPTY_FILTERS: Filters = { q: "", team: "", product: "", owner: "", sr: "", status: "", pm: "" };
 const REAL: StatusKey[] = ["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "COMPLETE"];
 
 async function api(path: string, opts?: RequestInit) {
@@ -59,6 +59,14 @@ export default function Dashboard({ me }: { me: Me }) {
   const router = useRouter();
   const canWrite = me.role !== "VIEWER";
   const isAdmin = me.role === "ADMIN";
+  const isPM = me.role === "PM";
+
+  // Tabs depend on role. A plain PM sees only their own, scoped views.
+  const tabDefs: [MainView, string][] = isPM
+    ? [["board", "My Main Board"], ["myproducts", "My Products"], ["activity", "My Activity"]]
+    : isAdmin
+      ? [["board", "Main Board"], ["myproducts", "My Products"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]]
+      : [["board", "Main Board"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]];
 
   const [products, setProducts] = useState<Product[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -111,14 +119,9 @@ export default function Dashboard({ me }: { me: Me }) {
     setProducts(d.products); setTasks(d.tasks); setActivity(d.activity); setTeams(d.teams);
     if (d.organization) setOrgName(d.organization.name);
   }, []);
-  const reloadWork = useCallback(async () => {
-    const [t, a, p] = await Promise.all([api("/api/tasks"), api("/api/activity"), api("/api/products")]);
-    setTasks(t.tasks); setActivity(a.activity); setProducts(p.products);
-  }, []);
-  const reloadProducts = useCallback(async () => {
-    const [p, a] = await Promise.all([api("/api/products"), api("/api/activity")]);
-    setProducts(p.products); setActivity(a.activity);
-  }, []);
+  // Reload through the scoped bootstrap so a PM never pulls data outside scope.
+  const reloadWork = loadAll;
+  const reloadProducts = loadAll;
 
   useEffect(() => {
     (async () => {
@@ -129,6 +132,8 @@ export default function Dashboard({ me }: { me: Me }) {
   const productById = useMemo(() => { const m: Record<string, Product> = {}; products.forEach((p) => (m[p.id] = p)); return m; }, [products]);
   const people = useMemo(() => { const s = new Set<string>(); tasks.forEach((t) => t.owner && s.add(t.owner)); products.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [tasks, products]);
   const srList = useMemo(() => { const s = new Set<string>(); tasks.forEach((t) => t.serviceRequest && s.add(t.serviceRequest)); return Array.from(s).sort(); }, [tasks]);
+  const pmList = useMemo(() => { const s = new Set<string>(); products.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [products]);
+  const myProducts = useMemo(() => products.filter((p) => (p.pm || "").trim().toLowerCase() === me.name.trim().toLowerCase()), [products, me.name]);
   const teamOptions = useMemo(() => { const s = new Set<string>(); teams.forEach((t) => s.add(t)); tasks.forEach((t) => t.team && s.add(t.team)); return Array.from(s); }, [teams, tasks]);
 
   const dispName = useCallback((id: string | null) => productDisplay(id ? productById[id] : null), [productById]);
@@ -141,6 +146,7 @@ export default function Dashboard({ me }: { me: Me }) {
       if (filters.product && t.productId !== filters.product) return false;
       if (filters.owner && t.owner !== filters.owner) return false;
       if (filters.sr && (t.serviceRequest || "") !== filters.sr) return false;
+      if (filters.pm) { const p = t.productId ? productById[t.productId] : null; if ((p?.pm || "") !== filters.pm) return false; }
       if (filters.status) { const e = effectiveStatus(t, asOf || null, activity); if (e.status !== filters.status) return false; }
       if (filters.q) {
         const h = `${t.title} ${t.owner} ${dispName(t.productId)} ${t.serviceRequest || ""} ${t.blocker || ""}`.toLowerCase();
@@ -221,7 +227,7 @@ export default function Dashboard({ me }: { me: Me }) {
 
       <div className="controls">
         <div className="tabs" role="tablist">
-          {([["board", "Main Board"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]] as [MainView, string][]).map(([v, label]) => (
+          {tabDefs.map(([v, label]) => (
             <button key={v} className="tab" role="tab" aria-selected={view === v} onClick={() => { setView(v); setProductBoardId(null); }}>
               {label}
               {v === "board" && !loading ? <span className="cnt">({visible.length})</span> : null}
@@ -229,13 +235,14 @@ export default function Dashboard({ me }: { me: Me }) {
             </button>
           ))}
         </div>
-        {view !== "activity" && view !== "products" && (
+        {view !== "activity" && view !== "products" && view !== "myproducts" && (
           <div className="filterrow">
             <input type="search" placeholder="Search tasks…" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} />
             <select value={filters.team} onChange={(e) => setFilters({ ...filters, team: e.target.value })} aria-label="Team"><option value="">All teams</option>{teamOptions.map((t) => <option key={t} value={t}>{t}</option>)}</select>
             <select value={filters.product} onChange={(e) => setFilters({ ...filters, product: e.target.value })} aria-label="Product"><option value="">All products</option>{[...products].sort((a, b) => productDisplay(a).localeCompare(productDisplay(b))).map((p) => <option key={p.id} value={p.id}>{productDisplay(p)}</option>)}</select>
             <select value={filters.owner} onChange={(e) => setFilters({ ...filters, owner: e.target.value })} aria-label="Owner"><option value="">All owners</option>{people.map((o) => <option key={o} value={o}>{o}</option>)}</select>
             <select value={filters.sr} onChange={(e) => setFilters({ ...filters, sr: e.target.value })} aria-label="Service request"><option value="">All requests</option>{srList.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+            {!isPM && <select value={filters.pm} onChange={(e) => setFilters({ ...filters, pm: e.target.value })} aria-label="PM"><option value="">All PMs</option>{pmList.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
             <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} aria-label="Status"><option value="">All statuses</option><option value="NOT_STARTED">Not started</option><option value="IN_PROGRESS">In progress</option><option value="IN_REVIEW">In review</option><option value="COMPLETE">Complete</option><option value="OVERDUE">Overdue</option></select>
             <button className="btn ghost sm" onClick={() => setFilters(EMPTY_FILTERS)}>Clear</button>
             <span className="grow" />
@@ -258,7 +265,7 @@ export default function Dashboard({ me }: { me: Me }) {
         {loading ? <div className="empty"><h3>Loading…</h3></div>
           : productBoardId ? <ProductBoard product={productById[productBoardId]} tasks={tasks.filter((t) => t.productId === productBoardId)} asOf={asOf} activity={activity} pbView={pbView} setPbView={(v) => { setPbView(v); lsSet("pdt_pbview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onBack={() => setProductBoardId(null)} onOpenTask={setDrawerTaskId} onAdd={() => setTaskModal({ open: true, editing: null, preProduct: productBoardId })} onMove={moveStatus} />
           : view === "board" ? <Board tasks={visible} allCount={tasks.length} asOf={asOf} activity={activity} boardView={boardView} setBoardView={(v) => { setBoardView(v); lsSet("pdt_bview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onOpenTask={setDrawerTaskId} onMove={moveStatus} />
-          : view === "products" ? <ProductsView products={products} tasks={tasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} onCreate={() => setProdCreateOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
+          : view === "products" || view === "myproducts" ? <ProductsView products={view === "myproducts" ? myProducts : products} tasks={tasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} onCreate={() => setProdCreateOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
           : view === "sheet" ? <Sheet tasks={visible} asOf={asOf} activity={activity} dispName={dispName} onOpenTask={setDrawerTaskId} />
           : view === "report" ? <Report tasks={tasks} activity={activity} dispName={dispName} range={range} setRange={setRange} eventText={eventText} />
           : <Feed activity={activity} tasks={tasks} />}

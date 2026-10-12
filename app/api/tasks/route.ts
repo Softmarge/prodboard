@@ -1,16 +1,21 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { withAuth, json, error, canWrite } from "@/lib/api";
+import { isScopedPM, managedProductIds } from "@/lib/scope";
 
 export const runtime = "nodejs";
 
 const STATUSES = ["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "COMPLETE"] as const;
 
 export const GET = withAuth(async (user) => {
-  const tasks = await prisma.task.findMany({
+  let tasks = await prisma.task.findMany({
     where: { organizationId: user.oid },
     orderBy: { createdAt: "desc" },
   });
+  if (isScopedPM(user)) {
+    const ids = await managedProductIds(user);
+    tasks = tasks.filter((t: any) => t.productId && ids.has(t.productId));
+  }
   return json({ tasks });
 });
 
