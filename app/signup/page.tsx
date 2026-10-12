@@ -31,8 +31,14 @@ function SignupForm() {
         if (!res.ok) { setInviteBad(true); return; }
         const d = await res.json();
         setInvitedOrg(d.organization);
-        setInvitedRole(d.role || "PM");
-        setForm((f) => ({ ...f, organization: d.organization, role: d.role || "PM" }));
+        setInvitedRole(d.role || null);
+        setForm((f) => ({
+          ...f,
+          organization: d.organization,
+          role: d.role || f.role,
+          firstName: d.firstName || f.firstName,
+          surname: d.surname || f.surname,
+        }));
       } catch { setInviteBad(true); }
     })();
   }, [invite]);
@@ -147,13 +153,15 @@ function SignupForm() {
         </div>
         <div className="field">
           <label htmlFor="role">Role</label>
-          <select id="role" value={form.role} onChange={(e) => set("role", e.target.value)} disabled={joining}>
+          <select id="role" value={form.role} onChange={(e) => set("role", e.target.value)} disabled={joining && !!invitedRole}>
             <option value="PM">Product Manager</option>
             <option value="VIEWER">Viewer (read-only)</option>
           </select>
           <div className="hint" style={{ marginTop: 4 }}>
             {joining
-              ? <>Set to <b>{invitedRole === "VIEWER" ? "Viewer (read-only)" : "Product Manager"}</b> by your invite link. An admin can change it later under Members.</>
+              ? (invitedRole
+                  ? <>Set to <b>{invitedRole === "VIEWER" ? "Viewer (read-only)" : "Product Manager"}</b> by your invite link. An admin can change it later under Members.</>
+                  : "Choose your role. An admin can change it later under Members.")
               : "If you are the first to register this organization, you will be made admin automatically."}
           </div>
         </div>

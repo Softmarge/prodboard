@@ -312,7 +312,7 @@ export default function Dashboard({ me }: { me: Me }) {
 
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} onDone={async (msg) => { setImportOpen(false); await reloadProducts(); flash(msg); }} flash={flash} />}
 
-      {inviteOpen && <InviteModal isAdmin={isAdmin} onClose={() => setInviteOpen(false)} flash={flash} />}
+      {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} flash={flash} />}
 
       {membersOpen && <MembersModal meId={me.id} onClose={() => setMembersOpen(false)} flash={flash} />}
 
@@ -1042,62 +1042,81 @@ function ImportModal({ onClose, onDone, flash }: { onClose: () => void; onDone: 
 }
 
 // ---------------- Invite ----------------
-function InviteModal({ isAdmin, onClose, flash }: { isAdmin: boolean; onClose: () => void; flash: (m: string) => void; }) {
-  const [role, setRole] = useState<"PM" | "VIEWER">("PM");
+function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: string) => void; }) {
+  const [role, setRole] = useState<"" | "PM" | "VIEWER">(""); // "" = let them choose
+  const [firstName, setFirstName] = useState("");
+  const [surname, setSurname] = useState("");
   const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  // Admins pick the role the link grants; anyone else can share the PM link.
-  const activeRole = isAdmin ? role : "PM";
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    (async () => {
-      try { const d = await api(`/api/invite?role=${activeRole}`); if (live) setUrl(d.url); }
-      catch (e) { if (live) flash((e as Error).message); }
-      finally { if (live) setLoading(false); }
-    })();
-    return () => { live = false; };
-  }, [activeRole, flash]);
+
+  async function createLink() {
+    setBusy(true);
+    try {
+      const d = await api("/api/invite", {
+        method: "POST",
+        body: JSON.stringify({
+          role: role || null,
+          firstName: firstName.trim() || undefined,
+          surname: surname.trim() || undefined,
+        }),
+      });
+      setUrl(d.url);
+      flash("Invite link ready");
+    } catch (e) { flash((e as Error).message); } finally { setBusy(false); }
+  }
   async function copy() {
     try { await navigator.clipboard.writeText(url); flash("Invite link copied"); }
     catch { const el = document.getElementById("invite-url") as HTMLInputElement | null; if (el) { el.select(); } flash("Select and copy the link"); }
   }
-  async function regenerate() {
-    if (!isAdmin) return;
-    setBusy(true);
-    try { const d = await api("/api/invite", { method: "POST", body: JSON.stringify({ role: activeRole }) }); setUrl(d.url); flash("New link generated; the old one no longer works"); }
-    catch (e) { flash((e as Error).message); } finally { setBusy(false); }
-  }
-  const roleLabel = activeRole === "VIEWER" ? "Viewer (read-only)" : "Product Manager";
+  // Any change to the settings means the shown link no longer matches them.
+  function onSetting<T>(setter: (v: T) => void) { return (v: T) => { setter(v); setUrl(""); }; }
+
+  const roleLabel = role === "VIEWER" ? "Viewer (read-only)" : role === "PM" ? "Product Manager" : "their choice of role";
+  const named = [firstName.trim(), surname.trim()].filter(Boolean).join(" ");
+
   return (
     <>
       <div className="scrim" onClick={onClose} />
       <div className="modal" role="dialog" aria-modal="true">
-        <div className="dhead"><h2>Invite colleagues</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dhead"><h2>Invite a colleague</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
-          <p className="lead" style={{ marginBottom: 14 }}>Share a link to invite colleagues. Anyone who signs up through it joins your organization automatically, with the organization and role locked in.</p>
-          {isAdmin && (
+          <p className="lead" style={{ marginBottom: 14 }}>Create a link to invite someone. Everything below is optional. Whoever signs up joins your organization automatically, with the organization locked in; they just set their email and password.</p>
+
+          <div className="field">
+            <label htmlFor="invite-role">Invite as</label>
+            <select id="invite-role" value={role} onChange={(e) => onSetting(setRole)(e.target.value as "" | "PM" | "VIEWER")}>
+              <option value="">Let them choose</option>
+              <option value="PM">Product Manager</option>
+              <option value="VIEWER">Viewer (read-only)</option>
+            </select>
+            <div className="hint" style={{ marginTop: 4 }}>Leave as “Let them choose” to not preselect a role. A link can never grant admin.</div>
+          </div>
+
+          <div className="two">
             <div className="field">
-              <label htmlFor="invite-role">Invite as</label>
-              <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value as "PM" | "VIEWER")}>
-                <option value="PM">Product Manager</option>
-                <option value="VIEWER">Viewer (read-only)</option>
-              </select>
-              <div className="hint" style={{ marginTop: 4 }}>Each person who uses this link joins as {roleLabel}.</div>
+              <label htmlFor="invite-first">First name <span className="hint">(optional)</span></label>
+              <input id="invite-first" value={firstName} onChange={(e) => onSetting(setFirstName)(e.target.value)} placeholder="Prefilled for them" />
             </div>
-          )}
-          {loading ? <div className="hint">Loading…</div> : (
+            <div className="field">
+              <label htmlFor="invite-surname">Surname <span className="hint">(optional)</span></label>
+              <input id="invite-surname" value={surname} onChange={(e) => onSetting(setSurname)(e.target.value)} placeholder="Prefilled for them" />
+            </div>
+          </div>
+          <div className="hint" style={{ marginTop: -4, marginBottom: 10 }}>If you fill these, the signup form comes prefilled{named ? <> for <b>{named}</b></> : null}; they can still edit them.</div>
+
+          {!url ? (
+            <button className="btn primary sm" onClick={createLink} disabled={busy} style={{ width: "100%" }}>{busy ? "Creating…" : "Create invite link"}</button>
+          ) : (
             <>
               <div className="field">
-                <label htmlFor="invite-url">{roleLabel} invite link</label>
+                <label htmlFor="invite-url">Invite link</label>
                 <input id="invite-url" readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                {isAdmin && <button className="btn ghost sm" onClick={regenerate} disabled={busy}>Regenerate link</button>}
+                <button className="btn ghost sm" onClick={createLink} disabled={busy}>New link</button>
                 <button className="btn primary sm" onClick={copy}>Copy link</button>
               </div>
-              <div className="hint" style={{ marginTop: 10 }}>{isAdmin ? <>New members join as <b>{roleLabel}</b>. You can switch the role above for a different link, or change anyone’s role later under Members. Regenerating invalidates the old link for this role.</> : "New members join as PM. An admin can invite viewers or change roles later."}</div>
+              <div className="hint" style={{ marginTop: 10 }}>This link invites as <b>{roleLabel}</b>{named ? <>, prefilled for <b>{named}</b>. Create a separate link for each person you name.</> : <>. It is reusable, so anyone you share it with can join.</>}</div>
             </>
           )}
         </div>

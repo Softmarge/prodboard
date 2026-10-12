@@ -7,41 +7,47 @@ export function newInviteToken() {
   return crypto.randomBytes(18).toString("base64url");
 }
 
-// Resolve an invite token to its organization and the role it pins.
-// New per-role links win; legacy single org tokens fall back to PM.
-export async function resolveInvite(
-  token: string
-): Promise<{ org: { id: string; name: string }; role: InviteRole } | null> {
+export type ResolvedInvite = {
+  org: { id: string; name: string };
+  role: InviteRole | null; // null = invitee chooses at signup
+  firstName: string | null;
+  surname: string | null;
+};
+
+// Resolve an invite token to its organization plus whatever the creator pinned.
+// New links carry an optional role and optional prefilled name. Legacy single
+// org tokens fall back to a plain PM invite with no prefill.
+export async function resolveInvite(token: string): Promise<ResolvedInvite | null> {
   const link = await prisma.inviteLink.findUnique({
     where: { token },
     include: { organization: true },
   });
   if (link) {
-    const role: InviteRole = link.role === "VIEWER" ? "VIEWER" : "PM";
-    return { org: { id: link.organization.id, name: link.organization.name }, role };
+    const role: InviteRole | null = link.role === "VIEWER" ? "VIEWER" : link.role === "PM" ? "PM" : null;
+    return {
+      org: { id: link.organization.id, name: link.organization.name },
+      role,
+      firstName: link.firstName || null,
+      surname: link.surname || null,
+    };
   }
   const org = await prisma.organization.findUnique({ where: { inviteToken: token } });
-  if (org) return { org: { id: org.id, name: org.name }, role: "PM" };
+  if (org) return { org: { id: org.id, name: org.name }, role: null, firstName: null, surname: null };
   return null;
 }
 
-// Return the org's link for a role, creating it on demand.
-export async function ensureInviteLink(organizationId: string, role: InviteRole) {
-  const existing = await prisma.inviteLink.findUnique({
-    where: { organizationId_role: { organizationId, role } },
-  });
-  if (existing) return existing;
+// Create a fresh invite link carrying optional role and optional prefilled name.
+export async function createInviteLink(
+  organizationId: string,
+  opts: { role?: InviteRole | null; firstName?: string | null; surname?: string | null }
+) {
   return prisma.inviteLink.create({
-    data: { organizationId, role, token: newInviteToken() },
-  });
-}
-
-// Rotate (regenerate) the org's link for a role.
-export async function rotateInviteLink(organizationId: string, role: InviteRole) {
-  const token = newInviteToken();
-  return prisma.inviteLink.upsert({
-    where: { organizationId_role: { organizationId, role } },
-    update: { token },
-    create: { organizationId, role, token },
+    data: {
+      organizationId,
+      token: newInviteToken(),
+      role: opts.role ?? null,
+      firstName: opts.firstName?.trim() || null,
+      surname: opts.surname?.trim() || null,
+    },
   });
 }

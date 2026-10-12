@@ -40,13 +40,15 @@ model Organization {
 
 model InviteLink {
   id             String       @id @default(cuid())
-  token          String       @unique // shareable token; the role below is pinned by the admin
-  role           Role         @default(PM) // PM or VIEWER only (enforced in the API)
+  token          String       @unique // shareable token
+  role           Role? // PM or VIEWER (enforced in the API); null = invitee chooses
+  firstName      String? // optional prefill for the signup form
+  surname        String? // optional prefill for the signup form
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
 
-  @@unique([organizationId, role]) // one active link per role per org
+  @@index([organizationId])
 }
 
 model User {

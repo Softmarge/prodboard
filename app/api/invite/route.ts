@@ -1,33 +1,36 @@
 import { z } from "zod";
-import { withAuth, json, error, isAdmin } from "@/lib/api";
-import { ensureInviteLink, rotateInviteLink, type InviteRole } from "@/lib/invite";
+import { withAuth, json, error } from "@/lib/api";
+import { createInviteLink } from "@/lib/invite";
 
 export const runtime = "nodejs";
 
-function parseRole(v: string | null): InviteRole {
-  return v === "VIEWER" ? "VIEWER" : "PM";
-}
-
-// Any signed-in member can fetch a link for a given role (defaults to PM).
-export const GET = withAuth(async (user, req) => {
-  const role = parseRole(new URL(req.url).searchParams.get("role"));
-  const link = await ensureInviteLink(user.oid, role);
-  const origin = new URL(req.url).origin;
-  return json({ token: link.token, url: `${origin}/signup?invite=${link.token}`, role });
+const Post = z.object({
+  role: z.enum(["PM", "VIEWER"]).nullable().optional(),
+  firstName: z.string().max(80).optional(),
+  surname: z.string().max(80).optional(),
 });
 
-const Post = z.object({ role: z.enum(["PM", "VIEWER"]) });
-
-// Admins rotate the link for a role (invalidates the old one for that role).
+// Any signed-in member can create an invite link. Role and name are all
+// optional: a link with no role lets the invitee choose, and a link with a
+// prefilled name saves them typing it. Links can never grant admin.
 export const POST = withAuth(async (user, req) => {
-  if (!isAdmin(user)) return error("Only an admin can regenerate invite links.", 403);
-  let role: InviteRole = "PM";
+  let data: z.infer<typeof Post> = {};
   try {
-    role = Post.parse(await req.json()).role;
+    data = Post.parse(await req.json());
   } catch {
-    return error("Choose PM or Viewer.");
+    return error("Could not create the invite link. Check the details and try again.");
   }
-  const link = await rotateInviteLink(user.oid, role);
+  const link = await createInviteLink(user.oid, {
+    role: data.role ?? null,
+    firstName: data.firstName,
+    surname: data.surname,
+  });
   const origin = new URL(req.url).origin;
-  return json({ token: link.token, url: `${origin}/signup?invite=${link.token}`, role });
+  return json({
+    token: link.token,
+    url: `${origin}/signup?invite=${link.token}`,
+    role: link.role ?? null,
+    firstName: link.firstName ?? null,
+    surname: link.surname ?? null,
+  });
 });
