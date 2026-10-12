@@ -231,3 +231,7 @@ table.sheet .due.late{color:var(--s-overdue);font-weight:600}
 .pwwrap input{width:100%;padding-right:40px}
 .pweye{position:absolute;top:50%;right:6px;transform:translateY(-50%);width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;color:var(--muted);border-radius:6px;cursor:pointer}
 .pweye:hover{color:var(--fg);background:var(--surface-2)}
+
+/* ---- inline link-style button (e.g. Resend code) ---- */
+.linklike{background:none;border:0;padding:0;color:var(--accent);font:inherit;cursor:pointer}
+.linklike:hover{text-decoration:underline}

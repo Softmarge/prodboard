@@ -52,6 +52,21 @@ model User {
   @@index([organizationId])
 }
 
+model PendingSignup {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  organization String?
+  role         String?
+  inviteToken  String?
+  codeHash     String // sha-256 of the 4-digit code
+  attempts     Int      @default(0)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 model PasswordReset {
   id        String    @id @default(cuid())
   userId    String

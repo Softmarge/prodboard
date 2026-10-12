@@ -8,11 +8,14 @@ import { passwordProblem, PASSWORD_MIN } from "@/lib/password";
 function SignupForm() {
   const router = useRouter();
   const invite = useSearchParams().get("invite") || "";
+  const [step, setStep] = useState<"form" | "code">("form");
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", organization: "", role: "PM" });
   const [invitedOrg, setInvitedOrg] = useState<string | null>(null);
   const [inviteBad, setInviteBad] = useState(false);
+  const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resentMsg, setResentMsg] = useState("");
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -31,15 +34,14 @@ function SignupForm() {
     })();
   }, [invite]);
 
-  async function submit(e: React.FormEvent) {
+  async function startSignup(e: React.FormEvent) {
     e.preventDefault();
     const pwProblem = passwordProblem(form.password);
     if (pwProblem) { setErr(pwProblem); return; }
     if (form.password !== form.confirm) { setErr("Passwords do not match."); return; }
-    setErr("");
-    setBusy(true);
+    setErr(""); setBusy(true);
     try {
-      const res = await fetch("/api/auth/signup", {
+      const res = await fetch("/api/auth/signup/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -50,15 +52,67 @@ function SignupForm() {
       });
       const data = await res.json();
       if (!res.ok) { setErr(data.error || "Sign up failed."); setBusy(false); return; }
-      router.push("/dashboard");
-      router.refresh();
-    } catch {
-      setErr("Network error. Try again.");
-      setBusy(false);
-    }
+      setBusy(false); setStep("code"); setErr("");
+    } catch { setErr("Network error. Try again."); setBusy(false); }
+  }
+
+  async function verifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (!/^\d{4}$/.test(code)) { setErr("Enter the 4-digit code from your email."); return; }
+    setErr(""); setBusy(true);
+    try {
+      const res = await fetch("/api/auth/signup/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setErr(data.error || "Verification failed."); setBusy(false); return; }
+      router.push("/dashboard"); router.refresh();
+    } catch { setErr("Network error. Try again."); setBusy(false); }
+  }
+
+  async function resend() {
+    setErr(""); setResentMsg("");
+    try {
+      const res = await fetch("/api/auth/signup/resend", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setErr(d.error || "Could not resend."); return; }
+      setResentMsg("A new code is on its way.");
+    } catch { setErr("Network error. Try again."); }
   }
 
   const joining = !!invitedOrg;
+
+  if (step === "code") {
+    return (
+      <>
+        <h1>Verify your email</h1>
+        <p className="lead">We sent a 4-digit code to <b>{form.email}</b>. Enter it to finish creating your account.</p>
+        {resentMsg && <div className="banner-ok">{resentMsg}</div>}
+        <form onSubmit={verifyCode}>
+          <div className="field">
+            <label htmlFor="code">Verification code</label>
+            <input id="code" inputMode="numeric" autoComplete="one-time-code" maxLength={4} value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              style={{ fontSize: 24, letterSpacing: 10, textAlign: "center", fontVariantNumeric: "tabular-nums" }}
+              placeholder="0000" required autoFocus />
+          </div>
+          {err && <div className="err">{err}</div>}
+          <button className="btn primary" type="submit" disabled={busy} style={{ width: "100%", marginTop: 6 }}>
+            {busy ? "Verifying…" : "Verify & create account"}
+          </button>
+        </form>
+        <div className="foot">
+          Did not get it? <button className="linklike" type="button" onClick={resend}>Resend code</button>
+          {" · "}
+          <button className="linklike" type="button" onClick={() => { setStep("form"); setErr(""); setCode(""); }}>Change details</button>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -67,7 +121,7 @@ function SignupForm() {
         {joining ? <>You are joining <b>{invitedOrg}</b>.</> : "The first person to register an organization becomes its admin (Lead PM)."}
       </p>
       {inviteBad && <div className="err" style={{ marginBottom: 12 }}>That invite link is invalid or expired. You can still create a new organization below, or ask your colleague for a fresh link.</div>}
-      <form onSubmit={submit}>
+      <form onSubmit={startSignup}>
         <div className="field">
           <label htmlFor="name">Full name</label>
           <input id="name" value={form.name} onChange={(e) => set("name", e.target.value)} required />
@@ -102,7 +156,7 @@ function SignupForm() {
         </div>
         {err && <div className="err">{err}</div>}
         <button className="btn primary" type="submit" disabled={busy} style={{ width: "100%", marginTop: 6 }}>
-          {busy ? "Creating…" : "Create account"}
+          {busy ? "Sending code…" : "Continue"}
         </button>
       </form>
       <div className="foot">Already have an account? <Link href="/login">Sign in</Link></div>
