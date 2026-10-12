@@ -31,10 +31,22 @@ model Organization {
   inviteToken String?  @unique // shareable token; anyone with the link joins this org
   createdAt   DateTime @default(now())
 
-  users      User[]
-  products   Product[]
-  tasks      Task[]
-  activities Activity[]
+  users       User[]
+  products    Product[]
+  tasks       Task[]
+  activities  Activity[]
+  inviteLinks InviteLink[]
+}
+
+model InviteLink {
+  id             String       @id @default(cuid())
+  token          String       @unique // shareable token; the role below is pinned by the admin
+  role           Role         @default(PM) // PM or VIEWER only (enforced in the API)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, role]) // one active link per role per org
 }
 
 model User {

@@ -53,7 +53,10 @@ export async function POST(req: Request) {
 
   let invitedOrg = null;
   if (pending.inviteToken) {
-    invitedOrg = await prisma.organization.findUnique({ where: { inviteToken: pending.inviteToken } });
+    const { resolveInvite } = await import("@/lib/invite");
+    const resolved = await resolveInvite(pending.inviteToken);
+    if (!resolved) return error("The invite link is no longer valid. Ask your colleague for a fresh one.", 400);
+    invitedOrg = await prisma.organization.findUnique({ where: { id: resolved.org.id } });
     if (!invitedOrg) return error("The invite link is no longer valid. Ask your colleague for a fresh one.", 400);
   }
   const orgName = (pending.organization || "").trim();

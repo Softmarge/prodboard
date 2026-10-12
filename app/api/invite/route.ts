@@ -1,28 +1,33 @@
-import crypto from "crypto";
-import { prisma } from "@/lib/db";
+import { z } from "zod";
 import { withAuth, json, error, isAdmin } from "@/lib/api";
+import { ensureInviteLink, rotateInviteLink, type InviteRole } from "@/lib/invite";
 
 export const runtime = "nodejs";
 
-function newToken() {
-  return crypto.randomBytes(18).toString("base64url");
+function parseRole(v: string | null): InviteRole {
+  return v === "VIEWER" ? "VIEWER" : "PM";
 }
 
-// Any signed-in member can get their organization's invite link.
+// Any signed-in member can fetch a link for a given role (defaults to PM).
 export const GET = withAuth(async (user, req) => {
-  let org = await prisma.organization.findUnique({ where: { id: user.oid } });
-  if (!org) return error("Organization not found.", 404);
-  if (!org.inviteToken) {
-    org = await prisma.organization.update({ where: { id: org.id }, data: { inviteToken: newToken() } });
-  }
+  const role = parseRole(new URL(req.url).searchParams.get("role"));
+  const link = await ensureInviteLink(user.oid, role);
   const origin = new URL(req.url).origin;
-  return json({ token: org.inviteToken, url: `${origin}/signup?invite=${org.inviteToken}`, organization: org.name });
+  return json({ token: link.token, url: `${origin}/signup?invite=${link.token}`, role });
 });
 
-// Admins can rotate the link (invalidates the old one).
+const Post = z.object({ role: z.enum(["PM", "VIEWER"]) });
+
+// Admins rotate the link for a role (invalidates the old one for that role).
 export const POST = withAuth(async (user, req) => {
-  if (!isAdmin(user)) return error("Only an admin can regenerate the invite link.", 403);
-  const org = await prisma.organization.update({ where: { id: user.oid }, data: { inviteToken: newToken() } });
+  if (!isAdmin(user)) return error("Only an admin can regenerate invite links.", 403);
+  let role: InviteRole = "PM";
+  try {
+    role = Post.parse(await req.json()).role;
+  } catch {
+    return error("Choose PM or Viewer.");
+  }
+  const link = await rotateInviteLink(user.oid, role);
   const origin = new URL(req.url).origin;
-  return json({ token: org.inviteToken, url: `${origin}/signup?invite=${org.inviteToken}`, organization: org.name });
+  return json({ token: link.token, url: `${origin}/signup?invite=${link.token}`, role });
 });

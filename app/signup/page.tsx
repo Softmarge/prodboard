@@ -11,6 +11,7 @@ function SignupForm() {
   const [step, setStep] = useState<"form" | "code">("form");
   const [form, setForm] = useState({ firstName: "", surname: "", email: "", password: "", confirm: "", organization: "", role: "PM" });
   const [invitedOrg, setInvitedOrg] = useState<string | null>(null);
+  const [invitedRole, setInvitedRole] = useState<string | null>(null);
   const [inviteBad, setInviteBad] = useState(false);
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
@@ -30,7 +31,8 @@ function SignupForm() {
         if (!res.ok) { setInviteBad(true); return; }
         const d = await res.json();
         setInvitedOrg(d.organization);
-        setForm((f) => ({ ...f, organization: d.organization }));
+        setInvitedRole(d.role || "PM");
+        setForm((f) => ({ ...f, organization: d.organization, role: d.role || "PM" }));
       } catch { setInviteBad(true); }
     })();
   }, [invite]);
@@ -145,12 +147,14 @@ function SignupForm() {
         </div>
         <div className="field">
           <label htmlFor="role">Role</label>
-          <select id="role" value={form.role} onChange={(e) => set("role", e.target.value)}>
+          <select id="role" value={form.role} onChange={(e) => set("role", e.target.value)} disabled={joining}>
             <option value="PM">Product Manager</option>
             <option value="VIEWER">Viewer (read-only)</option>
           </select>
           <div className="hint" style={{ marginTop: 4 }}>
-            {joining ? "An admin can change your role later under Members." : "If you are the first to register this organization, you will be made admin automatically."}
+            {joining
+              ? <>Set to <b>{invitedRole === "VIEWER" ? "Viewer (read-only)" : "Product Manager"}</b> by your invite link. An admin can change it later under Members.</>
+              : "If you are the first to register this organization, you will be made admin automatically."}
           </div>
         </div>
         <div className="field">

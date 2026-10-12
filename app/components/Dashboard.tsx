@@ -67,7 +67,7 @@ export default function Dashboard({ me }: { me: Me }) {
     ? [["board", "My Main Board"], ["myproducts", "My Products"], ["activity", "My Activity"]]
     : isAdmin
       ? [["board", "Main Board"], ["myproducts", "My Products"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]]
-      : [["board", "Main Board"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]];
+      : [["board", "Main Board"], ["products", "Products"], ["report", "Weekly report"], ["sheet", "Sheet"]];
 
   const [products, setProducts] = useState<Product[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -1043,13 +1043,22 @@ function ImportModal({ onClose, onDone, flash }: { onClose: () => void; onDone: 
 
 // ---------------- Invite ----------------
 function InviteModal({ isAdmin, onClose, flash }: { isAdmin: boolean; onClose: () => void; flash: (m: string) => void; }) {
+  const [role, setRole] = useState<"PM" | "VIEWER">("PM");
   const [url, setUrl] = useState("");
-  const [org, setOrg] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // Admins pick the role the link grants; anyone else can share the PM link.
+  const activeRole = isAdmin ? role : "PM";
   useEffect(() => {
-    (async () => { try { const d = await api("/api/invite"); setUrl(d.url); setOrg(d.organization); } catch (e) { flash((e as Error).message); } finally { setLoading(false); } })();
-  }, [flash]);
+    let live = true;
+    setLoading(true);
+    (async () => {
+      try { const d = await api(`/api/invite?role=${activeRole}`); if (live) setUrl(d.url); }
+      catch (e) { if (live) flash((e as Error).message); }
+      finally { if (live) setLoading(false); }
+    })();
+    return () => { live = false; };
+  }, [activeRole, flash]);
   async function copy() {
     try { await navigator.clipboard.writeText(url); flash("Invite link copied"); }
     catch { const el = document.getElementById("invite-url") as HTMLInputElement | null; if (el) { el.select(); } flash("Select and copy the link"); }
@@ -1057,27 +1066,38 @@ function InviteModal({ isAdmin, onClose, flash }: { isAdmin: boolean; onClose: (
   async function regenerate() {
     if (!isAdmin) return;
     setBusy(true);
-    try { const d = await api("/api/invite", { method: "POST" }); setUrl(d.url); flash("New link generated; the old one no longer works"); }
+    try { const d = await api("/api/invite", { method: "POST", body: JSON.stringify({ role: activeRole }) }); setUrl(d.url); flash("New link generated; the old one no longer works"); }
     catch (e) { flash((e as Error).message); } finally { setBusy(false); }
   }
+  const roleLabel = activeRole === "VIEWER" ? "Viewer (read-only)" : "Product Manager";
   return (
     <>
       <div className="scrim" onClick={onClose} />
       <div className="modal" role="dialog" aria-modal="true">
         <div className="dhead"><h2>Invite colleagues</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
-          <p className="lead" style={{ marginBottom: 14 }}>Share this link with colleagues to invite them{org ? <> to <b>{org}</b></> : null}. Anyone who signs up through it joins your organization automatically, with the organization locked in.</p>
+          <p className="lead" style={{ marginBottom: 14 }}>Share a link to invite colleagues. Anyone who signs up through it joins your organization automatically, with the organization and role locked in.</p>
+          {isAdmin && (
+            <div className="field">
+              <label htmlFor="invite-role">Invite as</label>
+              <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value as "PM" | "VIEWER")}>
+                <option value="PM">Product Manager</option>
+                <option value="VIEWER">Viewer (read-only)</option>
+              </select>
+              <div className="hint" style={{ marginTop: 4 }}>Each person who uses this link joins as {roleLabel}.</div>
+            </div>
+          )}
           {loading ? <div className="hint">Loading…</div> : (
             <>
               <div className="field">
-                <label htmlFor="invite-url">Invite link</label>
+                <label htmlFor="invite-url">{roleLabel} invite link</label>
                 <input id="invite-url" readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
                 {isAdmin && <button className="btn ghost sm" onClick={regenerate} disabled={busy}>Regenerate link</button>}
                 <button className="btn primary sm" onClick={copy}>Copy link</button>
               </div>
-              <div className="hint" style={{ marginTop: 10 }}>New members join as PM or Viewer (their choice at signup). Change anyone’s role later under Members.{isAdmin ? " Regenerating invalidates the old link." : ""}</div>
+              <div className="hint" style={{ marginTop: 10 }}>{isAdmin ? <>New members join as <b>{roleLabel}</b>. You can switch the role above for a different link, or change anyone’s role later under Members. Regenerating invalidates the old link for this role.</> : "New members join as PM. An admin can invite viewers or change roles later."}</div>
             </>
           )}
         </div>

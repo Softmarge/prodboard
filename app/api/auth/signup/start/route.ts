@@ -50,11 +50,16 @@ export async function POST(req: Request) {
   if (existingUser) return error("An account with that email already exists. Try signing in instead.", 409);
 
   // Resolve the target org up front so we can check display-name uniqueness and
-  // not ask for a code only to fail at the end.
+  // not ask for a code only to fail at the end. When joining by invite, the role
+  // is pinned by the link (set by the admin), not by anything the client sends.
   let targetOrg = null;
+  let invitedRole: "PM" | "VIEWER" | null = null;
   if (data.inviteToken) {
-    targetOrg = await prisma.organization.findUnique({ where: { inviteToken: data.inviteToken } });
-    if (!targetOrg) return error("This invite link is invalid. Ask your colleague for a fresh one.", 400);
+    const { resolveInvite } = await import("@/lib/invite");
+    const resolved = await resolveInvite(data.inviteToken);
+    if (!resolved) return error("This invite link is invalid. Ask your colleague for a fresh one.", 400);
+    targetOrg = { id: resolved.org.id };
+    invitedRole = resolved.role;
   } else {
     const orgName = (data.organization || "").trim();
     if (!orgName) return error("Enter an organization name.");
@@ -76,7 +81,7 @@ export async function POST(req: Request) {
     surname,
     passwordHash: await hashPassword(data.password),
     organization: data.inviteToken ? null : (data.organization || "").trim(),
-    role: data.role ?? "PM",
+    role: invitedRole ?? data.role ?? "PM",
     inviteToken: data.inviteToken ?? null,
     codeHash: hashCode(code),
     attempts: 0,
