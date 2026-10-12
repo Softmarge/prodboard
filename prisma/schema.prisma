@@ -44,6 +44,7 @@ model InviteLink {
   role           Role? // PM or VIEWER (enforced in the API); null = invitee chooses
   firstName      String? // optional prefill for the signup form
   surname        String? // optional prefill for the signup form
+  usedAt         DateTime? // set when a named link is consumed; named links are single-use
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())

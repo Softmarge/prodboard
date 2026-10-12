@@ -12,7 +12,7 @@ function SignupForm() {
   const [form, setForm] = useState({ firstName: "", surname: "", email: "", password: "", confirm: "", organization: "", role: "PM" });
   const [invitedOrg, setInvitedOrg] = useState<string | null>(null);
   const [invitedRole, setInvitedRole] = useState<string | null>(null);
-  const [inviteBad, setInviteBad] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -28,7 +28,7 @@ function SignupForm() {
     (async () => {
       try {
         const res = await fetch(`/api/invite/${invite}`);
-        if (!res.ok) { setInviteBad(true); return; }
+        if (!res.ok) { const e = await res.json().catch(() => ({})); setInviteError(e.error || "That invite link is invalid or expired."); return; }
         const d = await res.json();
         setInvitedOrg(d.organization);
         setInvitedRole(d.role || null);
@@ -39,7 +39,7 @@ function SignupForm() {
           firstName: d.firstName || f.firstName,
           surname: d.surname || f.surname,
         }));
-      } catch { setInviteBad(true); }
+      } catch { setInviteError("That invite link is invalid or expired."); }
     })();
   }, [invite]);
 
@@ -133,7 +133,7 @@ function SignupForm() {
       <p className="lead">
         {joining ? <>You are joining <b>{invitedOrg}</b>.</> : "The first person to register an organization becomes its admin (Lead PM)."}
       </p>
-      {inviteBad && <div className="err" style={{ marginBottom: 12 }}>That invite link is invalid or expired. You can still create a new organization below, or ask your colleague for a fresh link.</div>}
+      {inviteError && <div className="err" style={{ marginBottom: 12 }}>{inviteError} You can still create a new organization below, or ask your colleague for a fresh link.</div>}
       <form onSubmit={startSignup}>
         <div className="two">
           <div className="field">

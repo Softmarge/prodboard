@@ -328,6 +328,12 @@ export default function Dashboard({ me }: { me: Me }) {
 }
 
 // ---------------- Board ----------------
+// A task's timeline: start to due when a start date exists, otherwise just the due date.
+function timelineText(t: Task): string {
+  const due = fmtDate(t.dueDate);
+  const start = t.startDate ? fmtDate(t.startDate) : "";
+  return start && start !== due ? `${start} to ${due}` : due;
+}
 function cardMeta(t: Task, dispName: (id: string | null) => string, overdue: boolean) {
   return (
     <>
@@ -335,8 +341,11 @@ function cardMeta(t: Task, dispName: (id: string | null) => string, overdue: boo
         <span>{dispName(t.productId)}</span>
         <span className="who">{t.owner || "-"}</span>
         <span>{t.team}</span>
-        <span className="tnum" style={overdue ? { color: "var(--s-overdue)", fontWeight: 600 } : undefined}>Due {fmtDate(t.dueDate)}</span>
         {t.serviceRequest ? <span className="sr">{t.serviceRequest}</span> : null}
+      </div>
+      <div className="meta">
+        <span style={{ opacity: 0.7 }}>Timeline:</span>
+        <span className="tnum" style={overdue ? { color: "var(--s-overdue)", fontWeight: 600 } : undefined}>{timelineText(t)}</span>
       </div>
       {t.blocker ? <div className="meta"><span style={{ color: "var(--s-overdue)" }}>⚑ {t.blocker}</span></div> : null}
     </>
@@ -424,7 +433,7 @@ function ListBoard({ tasks, activity, asOf, cmpTasks, dispName, onOpenTask }: { 
   return (
     <div className="sheetwrap">
       <table className="sheet">
-        <thead><tr><th>Pri</th><th>Task</th><th>Product</th><th>Owner</th><th>Team</th><th>Status</th><th>Due</th><th>Request</th><th>Last update</th></tr></thead>
+        <thead><tr><th>Pri</th><th>Task</th><th>Product</th><th>Owner</th><th>Team</th><th>Status</th><th>Timeline</th><th>Request</th><th>Last update</th></tr></thead>
         <tbody>
           {arr.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const lu = lastUpdateFor(t.id, activity); return (
             <tr key={t.id} className="rowbtn" onClick={() => onOpenTask(t.id)}>
@@ -432,7 +441,7 @@ function ListBoard({ tasks, activity, asOf, cmpTasks, dispName, onOpenTask }: { 
               <td><div className="title">{t.title}</div>{t.blocker ? <div className="hint" style={{ color: "var(--s-overdue)" }}>⚑ {t.blocker}</div> : null}</td>
               <td>{dispName(t.productId)}</td><td>{t.owner || "-"}</td><td>{t.team}</td>
               <td><Chip status={e.status} /></td>
-              <td className={`tnum due ${e.overdue ? "late" : ""}`}>{fmtDate(t.dueDate)}</td>
+              <td className={`tnum due ${e.overdue ? "late" : ""}`}>{timelineText(t)}</td>
               <td>{t.serviceRequest ? <span className="sr">{t.serviceRequest}</span> : <span className="hint">-</span>}</td>
               <td className="hint tnum">{lu ? relTime(lu.ts) : "-"}</td>
             </tr>
@@ -489,14 +498,14 @@ function Sheet({ tasks, asOf, activity, dispName, onOpenTask }: { tasks: Task[];
   return (
     <div className="sheetwrap">
       <table className="sheet">
-        <thead><tr><th>Task</th><th>Product</th><th>Team</th><th>Owner</th><th>Status</th><th>Due</th><th>Request</th><th>Last update</th></tr></thead>
+        <thead><tr><th>Task</th><th>Product</th><th>Team</th><th>Owner</th><th>Status</th><th>Timeline</th><th>Request</th><th>Last update</th></tr></thead>
         <tbody>
           {sorted.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const lu = lastUpdateFor(t.id, activity); return (
             <tr key={t.id} className="rowbtn" onClick={() => onOpenTask(t.id)}>
               <td><div className="title">{t.title}</div>{t.blocker ? <div className="hint" style={{ color: "var(--s-overdue)" }}>⚑ {t.blocker}</div> : null}</td>
               <td>{dispName(t.productId)}</td><td>{t.team}</td><td>{t.owner || "-"}</td>
               <td><Chip status={e.status} /></td>
-              <td className={`tnum due ${e.overdue ? "late" : ""}`}>{fmtDate(t.dueDate)}</td>
+              <td className={`tnum due ${e.overdue ? "late" : ""}`}>{timelineText(t)}</td>
               <td>{t.serviceRequest ? <span className="sr">{t.serviceRequest}</span> : <span className="hint">-</span>}</td>
               <td className="hint tnum">{lu ? relTime(lu.ts) : "-"}</td>
             </tr>
@@ -670,7 +679,7 @@ function ProductDetail({ product, tasks, activity, asOf, canWrite, onClose, onOp
               {list.map((t) => { const e = effectiveStatus(t, asOf || null, activity); return (
                 <button key={t.id} className="pdtask" style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})` }} onClick={() => onOpenTask(t.id)}>
                   <div className="pdtask-top"><span className="title">{t.title}</span><Chip status={e.status} /></div>
-                  <div className="meta"><span className="who">{t.owner || "-"}</span><span>{t.team}</span><span className="tnum">Due {fmtDate(t.dueDate)}</span>{t.serviceRequest ? <span className="sr">{t.serviceRequest}</span> : null}</div>
+                  <div className="meta"><span className="who">{t.owner || "-"}</span><span>{t.team}</span><span className="tnum"><span style={{ opacity: 0.7 }}>Timeline:</span> {timelineText(t)}</span>{t.serviceRequest ? <span className="sr">{t.serviceRequest}</span> : null}</div>
                 </button>
               ); })}
             </div>

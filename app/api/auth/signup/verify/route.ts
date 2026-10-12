@@ -52,11 +52,13 @@ export async function POST(req: Request) {
   }
 
   let invitedOrg = null;
+  let resolvedInvite: Awaited<ReturnType<typeof import("@/lib/invite").resolveInvite>> = null;
   if (pending.inviteToken) {
-    const { resolveInvite } = await import("@/lib/invite");
-    const resolved = await resolveInvite(pending.inviteToken);
-    if (!resolved) return error("The invite link is no longer valid. Ask your colleague for a fresh one.", 400);
-    invitedOrg = await prisma.organization.findUnique({ where: { id: resolved.org.id } });
+    const { resolveInvite, INVITE_USED_MESSAGE } = await import("@/lib/invite");
+    resolvedInvite = await resolveInvite(pending.inviteToken);
+    if (!resolvedInvite) return error("The invite link is no longer valid. Ask your colleague for a fresh one.", 400);
+    if (resolvedInvite.named && resolvedInvite.used) return error(INVITE_USED_MESSAGE, 410);
+    invitedOrg = await prisma.organization.findUnique({ where: { id: resolvedInvite.org.id } });
     if (!invitedOrg) return error("The invite link is no longer valid. Ask your colleague for a fresh one.", 400);
   }
   const orgName = (pending.organization || "").trim();
@@ -80,6 +82,12 @@ export async function POST(req: Request) {
     await tx.pendingSignup.delete({ where: { email } });
     return { org, user };
   });
+
+  // A named link is single-use: consume it so a reuse attempt is refused.
+  if (resolvedInvite?.linkId && resolvedInvite.named) {
+    const { markInviteUsed } = await import("@/lib/invite");
+    await markInviteUsed(resolvedInvite.linkId);
+  }
 
   await setSession({
     uid: result.user.id,

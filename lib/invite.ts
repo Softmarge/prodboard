@@ -8,10 +8,13 @@ export function newInviteToken() {
 }
 
 export type ResolvedInvite = {
+  linkId: string | null; // null for legacy org-wide tokens
   org: { id: string; name: string };
   role: InviteRole | null; // null = invitee chooses at signup
   firstName: string | null;
   surname: string | null;
+  named: boolean; // a name was prefilled; named links are single-use
+  used: boolean; // already consumed (only meaningful for named links)
 };
 
 // Resolve an invite token to its organization plus whatever the creator pinned.
@@ -24,17 +27,29 @@ export async function resolveInvite(token: string): Promise<ResolvedInvite | nul
   });
   if (link) {
     const role: InviteRole | null = link.role === "VIEWER" ? "VIEWER" : link.role === "PM" ? "PM" : null;
+    const firstName = link.firstName || null;
+    const surname = link.surname || null;
     return {
+      linkId: link.id,
       org: { id: link.organization.id, name: link.organization.name },
       role,
-      firstName: link.firstName || null,
-      surname: link.surname || null,
+      firstName,
+      surname,
+      named: !!(firstName || surname),
+      used: !!link.usedAt,
     };
   }
   const org = await prisma.organization.findUnique({ where: { inviteToken: token } });
-  if (org) return { org: { id: org.id, name: org.name }, role: null, firstName: null, surname: null };
+  if (org) return { linkId: null, org: { id: org.id, name: org.name }, role: null, firstName: null, surname: null, named: false, used: false };
   return null;
 }
+
+// Mark a named link consumed so it cannot be reused.
+export async function markInviteUsed(linkId: string) {
+  await prisma.inviteLink.update({ where: { id: linkId }, data: { usedAt: new Date() } }).catch(() => {});
+}
+
+export const INVITE_USED_MESSAGE = "This invite link has already been used. Ask your colleague for a fresh one.";
 
 // Create a fresh invite link carrying optional role and optional prefilled name.
 export async function createInviteLink(

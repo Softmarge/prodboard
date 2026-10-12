@@ -1,5 +1,5 @@
 import { json, error } from "@/lib/api";
-import { resolveInvite } from "@/lib/invite";
+import { resolveInvite, INVITE_USED_MESSAGE } from "@/lib/invite";
 
 export const runtime = "nodejs";
 
@@ -11,6 +11,7 @@ export async function GET(_req: Request, { params }: { params: { token: string }
   if (!token) return error("Invalid invite.", 400);
   const resolved = await resolveInvite(token);
   if (!resolved) return error("This invite link is invalid.", 404);
+  if (resolved.named && resolved.used) return error(INVITE_USED_MESSAGE, 410);
   return json({
     organization: resolved.org.name,
     role: resolved.role,

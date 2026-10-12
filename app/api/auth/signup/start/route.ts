@@ -55,9 +55,10 @@ export async function POST(req: Request) {
   let targetOrg = null;
   let invitedRole: "PM" | "VIEWER" | null = null;
   if (data.inviteToken) {
-    const { resolveInvite } = await import("@/lib/invite");
+    const { resolveInvite, INVITE_USED_MESSAGE } = await import("@/lib/invite");
     const resolved = await resolveInvite(data.inviteToken);
     if (!resolved) return error("This invite link is invalid. Ask your colleague for a fresh one.", 400);
+    if (resolved.named && resolved.used) return error(INVITE_USED_MESSAGE, 410);
     targetOrg = { id: resolved.org.id };
     invitedRole = resolved.role;
   } else {
