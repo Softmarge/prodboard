@@ -31,6 +31,13 @@ export const PATCH = withAuth(async (user, req) => {
   const target = await prisma.user.findFirst({ where: { id: data.userId, organizationId: user.oid } });
   if (!target) return error("Member not found.", 404);
 
+  if (data.name !== undefined) {
+    const { nameTaken } = await import("@/lib/names");
+    if (await nameTaken(user.oid, data.name, target.id)) {
+      return error(`The display name “${data.name.trim()}” is already taken in this organization.`, 409);
+    }
+  }
+
   // Prevent removing the last admin.
   if (data.role !== undefined && target.role === "ADMIN" && data.role !== "ADMIN") {
     const admins = await prisma.user.count({ where: { organizationId: user.oid, role: "ADMIN" } });

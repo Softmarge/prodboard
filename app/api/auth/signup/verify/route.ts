@@ -59,12 +59,20 @@ export async function POST(req: Request) {
   const orgName = (pending.organization || "").trim();
   const existingOrg = invitedOrg ?? (orgName ? await prisma.organization.findUnique({ where: { name: orgName } }) : null);
 
+  // Final display-name uniqueness check (an org existing here means a race is possible).
+  if (existingOrg) {
+    const { nameTaken } = await import("@/lib/names");
+    if (await nameTaken(existingOrg.id, pending.name)) {
+      return error(`The display name “${pending.name}” was just taken in this organization. Start again with a different first name.`, 409);
+    }
+  }
+
   const result = await prisma.$transaction(async (tx: any) => {
     const org = existingOrg ?? (await tx.organization.create({ data: { name: orgName } }));
     const isFirst = !existingOrg;
     const role = invitedOrg ? (pending.role as "PM" | "VIEWER") : isFirst ? "ADMIN" : (pending.role as "PM" | "VIEWER");
     const user = await tx.user.create({
-      data: { name: pending.name, email, passwordHash: pending.passwordHash, role, organizationId: org.id },
+      data: { name: pending.name, firstName: pending.firstName, surname: pending.surname, email, passwordHash: pending.passwordHash, role, organizationId: org.id },
     });
     await tx.pendingSignup.delete({ where: { email } });
     return { org, user };

@@ -9,7 +9,7 @@ function SignupForm() {
   const router = useRouter();
   const invite = useSearchParams().get("invite") || "";
   const [step, setStep] = useState<"form" | "code">("form");
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", organization: "", role: "PM" });
+  const [form, setForm] = useState({ firstName: "", surname: "", email: "", password: "", confirm: "", organization: "", role: "PM" });
   const [invitedOrg, setInvitedOrg] = useState<string | null>(null);
   const [inviteBad, setInviteBad] = useState(false);
   const [code, setCode] = useState("");
@@ -46,7 +46,7 @@ function SignupForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: form.name, email: form.email, password: form.password,
+          firstName: form.firstName, surname: form.surname, email: form.email, password: form.password,
           organization: form.organization, role: form.role,
           ...(invite ? { inviteToken: invite } : {}),
         }),
@@ -127,10 +127,17 @@ function SignupForm() {
       </p>
       {inviteBad && <div className="err" style={{ marginBottom: 12 }}>That invite link is invalid or expired. You can still create a new organization below, or ask your colleague for a fresh link.</div>}
       <form onSubmit={startSignup}>
-        <div className="field">
-          <label htmlFor="name">Full name</label>
-          <input id="name" value={form.name} onChange={(e) => set("name", e.target.value)} required />
+        <div className="two">
+          <div className="field">
+            <label htmlFor="firstName">First name</label>
+            <input id="firstName" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="surname">Surname</label>
+            <input id="surname" value={form.surname} onChange={(e) => set("surname", e.target.value)} required />
+          </div>
         </div>
+        <div className="hint" style={{ marginTop: -4, marginBottom: 10 }}>Your display name will be your first name{form.firstName ? <> (<b>{form.firstName.trim()}</b>)</> : ""}, and must be unique in your organization.</div>
         <div className="field">
           <label htmlFor="org">Organization</label>
           <input id="org" value={form.organization} onChange={(e) => set("organization", e.target.value)} placeholder="e.g. Acme Rewards" required disabled={joining} />

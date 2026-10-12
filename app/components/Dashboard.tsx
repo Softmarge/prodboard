@@ -893,16 +893,32 @@ function ProductSettingsModal({ product, people, isAdmin, onClose, onSave, onDec
   );
 }
 
-// ---------------- Profile (edit own name) ----------------
+// ---------------- Profile (edit own name, OTP-verified) ----------------
 function ProfileModal({ currentName, onClose, onSaved, flash }: { currentName: string; onClose: () => void; onSaved: (m: string) => void; flash: (m: string) => void; }) {
+  const [step, setStep] = useState<"name" | "code">("name");
   const [name, setName] = useState(currentName);
+  const [code, setCode] = useState("");
+  const [relayed, setRelayed] = useState(false);
   const [busy, setBusy] = useState(false);
-  async function save() {
+  const [err, setErr] = useState("");
+
+  async function start() {
     const n = name.trim();
-    if (!n) { flash("Enter a name."); return; }
-    setBusy(true);
-    try { await api("/api/me", { method: "PATCH", body: JSON.stringify({ name: n }) }); onSaved("Name updated"); }
-    catch (e) { flash((e as Error).message); setBusy(false); }
+    if (!n) { setErr("Enter a name."); return; }
+    if (n === currentName) { setErr("That is already your name."); return; }
+    setErr(""); setBusy(true);
+    try {
+      const d = await api("/api/me/name/start", { method: "POST", body: JSON.stringify({ name: n }) });
+      setRelayed(!!d.relayed); setStep("code"); setBusy(false);
+    } catch (e) { setErr((e as Error).message); setBusy(false); }
+  }
+  async function verify() {
+    if (!/^\d{4}$/.test(code)) { setErr("Enter the 4-digit code."); return; }
+    setErr(""); setBusy(true);
+    try {
+      await api("/api/me/name/verify", { method: "POST", body: JSON.stringify({ code }) });
+      onSaved("Name updated");
+    } catch (e) { setErr((e as Error).message); setBusy(false); }
   }
   return (
     <>
@@ -910,10 +926,27 @@ function ProfileModal({ currentName, onClose, onSaved, flash }: { currentName: s
       <div className="modal" role="dialog" aria-modal="true">
         <div className="dhead"><h2>Your profile</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
-          <div className="field"><label htmlFor="pf-name">Display name</label><input id="pf-name" value={name} onChange={(e) => setName(e.target.value)} /></div>
-          <div className="hint">Your name is how products are matched to you. If you manage products, set this to the exact PM name used on them (for example “Majesty”).</div>
+          {step === "name" ? (
+            <>
+              <div className="field"><label htmlFor="pf-name">Display name</label><input id="pf-name" value={name} onChange={(e) => setName(e.target.value)} /></div>
+              <div className="hint">Changing your name needs email verification and must be unique in your organization. It is how products are matched to you, so set it to the exact PM name on your products (for example “Majesty”).</div>
+              {err && <div className="err">{err}</div>}
+            </>
+          ) : (
+            <>
+              <p className="lead">{relayed ? "A 4-digit code was sent to your workspace administrator. Ask them for it." : "Enter the 4-digit code we emailed you."}</p>
+              <div className="field"><label htmlFor="pf-code">Verification code</label>
+                <input id="pf-code" inputMode="numeric" maxLength={4} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))} style={{ fontSize: 22, letterSpacing: 8, textAlign: "center" }} placeholder="0000" autoFocus /></div>
+              {err && <div className="err">{err}</div>}
+            </>
+          )}
         </div>
-        <div className="dfoot"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</button></div>
+        <div className="dfoot">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          {step === "name"
+            ? <button className="btn primary" onClick={start} disabled={busy}>{busy ? "Sending…" : "Send code"}</button>
+            : <button className="btn primary" onClick={verify} disabled={busy}>{busy ? "Verifying…" : "Verify & save"}</button>}
+        </div>
       </div>
     </>
   );

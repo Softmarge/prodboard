@@ -9,7 +9,8 @@ import { sendEmail, emailConfigured } from "@/lib/email";
 export const runtime = "nodejs";
 
 const Body = z.object({
-  name: z.string().min(1).max(120),
+  firstName: z.string().min(1).max(80),
+  surname: z.string().min(1).max(80),
   email: z.string().email().max(200),
   password: z.string().max(200),
   organization: z.string().min(1).max(120).optional(),
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   try {
     data = Body.parse(await req.json());
   } catch {
-    return error("Please fill in a name, a valid email, a password, and an organization.");
+    return error("Please fill in your first name, surname, a valid email, a password, and an organization.");
   }
   const pwProblem = passwordProblem(data.password);
   if (pwProblem) return error(pwProblem);
@@ -41,24 +42,38 @@ export async function POST(req: Request) {
   }
 
   const email = data.email.trim().toLowerCase();
+  const firstName = data.firstName.trim();
+  const surname = data.surname.trim();
+  const displayName = firstName; // display name is the first name
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) return error("An account with that email already exists. Try signing in instead.", 409);
 
-  // Validate the invite (if any) up front so the user is not asked for a code
-  // only to fail later.
+  // Resolve the target org up front so we can check display-name uniqueness and
+  // not ask for a code only to fail at the end.
+  let targetOrg = null;
   if (data.inviteToken) {
-    const org = await prisma.organization.findUnique({ where: { inviteToken: data.inviteToken } });
-    if (!org) return error("This invite link is invalid. Ask your colleague for a fresh one.", 400);
-  } else if (!(data.organization || "").trim()) {
-    return error("Enter an organization name.");
+    targetOrg = await prisma.organization.findUnique({ where: { inviteToken: data.inviteToken } });
+    if (!targetOrg) return error("This invite link is invalid. Ask your colleague for a fresh one.", 400);
+  } else {
+    const orgName = (data.organization || "").trim();
+    if (!orgName) return error("Enter an organization name.");
+    targetOrg = await prisma.organization.findUnique({ where: { name: orgName } });
+  }
+  if (targetOrg) {
+    const { nameTaken } = await import("@/lib/names");
+    if (await nameTaken(targetOrg.id, displayName)) {
+      return error(`The display name “${displayName}” is already taken in this organization. Add an initial or use a different first name.`, 409);
+    }
   }
 
   const code = code4();
   const expiresAt = new Date(Date.now() + 1000 * 60 * 10); // 10 minutes
   const payload = {
     email,
-    name: data.name.trim(),
+    name: displayName,
+    firstName,
+    surname,
     passwordHash: await hashPassword(data.password),
     organization: data.inviteToken ? null : (data.organization || "").trim(),
     role: data.role ?? "PM",
