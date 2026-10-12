@@ -511,7 +511,7 @@ function Sheet({ tasks, asOf, activity, dispName, onOpenTask }: { tasks: Task[];
 function Report({ tasks, activity, dispName, range, setRange, eventText }: { tasks: Task[]; activity: Activity[]; dispName: (id: string | null) => string; range: { from: string; to: string }; setRange: (r: { from: string; to: string }) => void; eventText: (a: Activity) => string; }) {
   const fromT = new Date(range.from + "T00:00:00").getTime(); const toT = new Date(range.to + "T23:59:59.999").getTime();
   const moved = activity.filter((a) => { const ts = new Date(a.ts).getTime(); return ts >= fromT && ts <= toT && a.type !== "product"; });
-  const completed = moved.filter((a) => a.type === "status" && a.toStatus === "COMPLETE").length;
+  const completed = new Set(moved.filter((a) => (a.type === "status" || a.type === "created") && a.toStatus === "COMPLETE").map((a) => a.taskId)).size;
   const createdN = moved.filter((a) => a.type === "created").length;
   const touched = new Set(moved.map((a) => a.taskId));
   const overdueEnd = tasks.filter((t) => t.status !== "COMPLETE" && isoToYMD(t.dueDate) && isoToYMD(t.dueDate) < range.to).length;
