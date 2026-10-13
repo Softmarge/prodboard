@@ -21,3 +21,12 @@ export const PRODUCT_TYPES = [
   "Backend / API",
   "Other",
 ];
+
+// Default personal highlight presets (each user can rename and recolor these).
+export const HL_PRESET_DEFAULTS: { name: string; color: string }[] = [
+  { name: "Focus", color: "#FDE047" },
+  { name: "Risk", color: "#F9A8D4" },
+];
+
+// A user is considered online if their last heartbeat was within this window.
+export const ONLINE_WINDOW_MS = 2 * 60 * 1000;

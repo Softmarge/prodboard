@@ -79,6 +79,11 @@ model User {
   passwordHash   String
   role           Role         @default(PM)
   activeGroupId  String? // last selected product group; null = Main (all products)
+  lastSeenAt     DateTime? // updated by a heartbeat; drives online presence and last seen
+  hlName1        String? // personal highlight preset 1 name
+  hlColor1       String? // personal highlight preset 1 color (hex)
+  hlName2        String? // personal highlight preset 2 name
+  hlColor2       String? // personal highlight preset 2 color (hex)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
@@ -86,6 +91,7 @@ model User {
   resets      PasswordReset[]
   nameChanges PendingNameChange[]
   groups      ProductGroup[]
+  highlights  TaskHighlight[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -169,9 +175,25 @@ model Task {
   updatedAt      DateTime     @updatedAt
 
   activities Activity[]
+  highlights TaskHighlight[]
 
   @@index([organizationId])
   @@index([productId])
+}
+
+// A private, per-user highlight color on a task. Only the owner sees it.
+model TaskHighlight {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  color     String // hex color
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, taskId])
+  @@index([userId])
 }
 
 model Activity {

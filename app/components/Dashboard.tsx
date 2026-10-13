@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -32,6 +32,18 @@ import {
 } from "./helpers";
 
 type Me = { id: string; name: string; email: string; role: Role };
+type HlPreset = { name: string; color: string };
+type PresenceMember = { id: string; name: string; role: Role; lastSeenAt: string | null; online: boolean };
+
+// Per-user task highlights, shared through context so deep card/row components
+// can read a task's color and open the picker without prop drilling.
+const HLContext = createContext<{ color: (id: string) => string | undefined; open: (id: string, e: React.MouseEvent) => void }>({ color: () => undefined, open: () => {} });
+function useHl() { return useContext(HLContext); }
+// Low-alpha tint from a #rrggbb color, for row and card backgrounds.
+function hlTint(color?: string): string | undefined {
+  if (!color) return undefined;
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color + "2E" : color;
+}
 type MainView = "board" | "myproducts" | "products" | "sheet" | "report" | "activity";
 type BoardView = "kanban" | "list" | "grid";
 type Filters = { q: string; team: string; product: string; owner: string; sr: string; status: string; pm: string };
@@ -112,6 +124,14 @@ export default function Dashboard({ me }: { me: Me }) {
   const [groupsModalOpen, setGroupsModalOpen] = useState(false);
   const groupInit = useRef(false);
 
+  // Highlights (private per user) + presence.
+  const [highlights, setHighlights] = useState<Record<string, string>>({});
+  const [hlPresets, setHlPresets] = useState<HlPreset[]>([{ name: "Focus", color: "#FDE047" }, { name: "Risk", color: "#F9A8D4" }]);
+  const [hlMenu, setHlMenu] = useState<{ taskId: string; x: number; y: number } | null>(null);
+  const [hlPresetsOpen, setHlPresetsOpen] = useState(false);
+  const [presence, setPresence] = useState<PresenceMember[]>([]);
+  const [presenceOpen, setPresenceOpen] = useState(false);
+
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
   const flash = useCallback((m: string) => {
     setToast(m); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(""), 2200);
@@ -131,6 +151,8 @@ export default function Dashboard({ me }: { me: Me }) {
     const d = await api("/api/bootstrap");
     setProducts(d.products); setTasks(d.tasks); setActivity(d.activity); setTeams(d.teams);
     setGroups(d.groups || []);
+    setHighlights(d.highlights || {});
+    if (d.highlightPresets) setHlPresets(d.highlightPresets);
     if (d.organization) setOrgName(d.organization.name);
     // Initialize the Main/Groups selection once, from the remembered choice.
     if (!groupInit.current) {
@@ -177,6 +199,26 @@ export default function Dashboard({ me }: { me: Me }) {
   }
   function pickGroup(id: string) { setGroupMode(true); setSelectedGroupId(id); clearProductFilter(); persistActive(id); }
   function activateGroup(id: string) { setGroupMode(true); setSelectedGroupId(id); clearProductFilter(); persistActive(id); }
+
+  // Highlights: optimistic set/clear, saved per user.
+  const setHighlight = useCallback((taskId: string, color: string | null) => {
+    setHighlights((prev) => { const n = { ...prev }; if (color) n[taskId] = color; else delete n[taskId]; return n; });
+    api("/api/highlights", { method: "POST", body: JSON.stringify({ taskId, color }) }).catch(() => {});
+  }, []);
+  const hlCtx = useMemo(() => ({ color: (id: string) => highlights[id], open: (id: string, e: React.MouseEvent) => setHlMenu({ taskId: id, x: e.clientX, y: e.clientY }) }), [highlights]);
+
+  // Presence: heartbeat and roster refresh on an interval.
+  useEffect(() => {
+    let live = true;
+    const beat = () => { api("/api/presence", { method: "POST" }).catch(() => {}); };
+    const refresh = async () => { try { const d = await api("/api/presence"); if (live) setPresence(d.members || []); } catch {} };
+    beat(); refresh();
+    const b = setInterval(beat, 60000);
+    const r = setInterval(refresh, 30000);
+    return () => { live = false; clearInterval(b); clearInterval(r); };
+  }, []);
+  const onlineCount = presence.filter((m) => m.online).length;
+  const lastActivity = activity[0] || null;
   const people = useMemo(() => { const s = new Set<string>(); scopedTasks.forEach((t) => t.owner && s.add(t.owner)); scopedProducts.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [scopedTasks, scopedProducts]);
   const srList = useMemo(() => { const s = new Set<string>(); scopedTasks.forEach((t) => t.serviceRequest && s.add(t.serviceRequest)); return Array.from(s).sort(); }, [scopedTasks]);
   const pmList = useMemo(() => { const s = new Set<string>(); scopedProducts.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [scopedProducts]);
@@ -261,7 +303,7 @@ export default function Dashboard({ me }: { me: Me }) {
   const drawerTask = drawerTaskId ? tasks.find((t) => t.id === drawerTaskId) || null : null;
 
   return (
-    <>
+    <HLContext.Provider value={hlCtx}>
       <div className="brand">
         <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} title="Go to ProdBoard home" aria-label="ProdBoard home">
           <div className="mk">PB</div>
@@ -271,6 +313,8 @@ export default function Dashboard({ me }: { me: Me }) {
           </div>
         </Link>
         <div className="spacer" />
+        {lastActivity && <div className="lastupd" title={`${eventText(lastActivity)} by ${lastActivity.author}`}><span className="lu-k">Last update</span><span className="lu-v">{relTime(lastActivity.ts)}{lastActivity.author ? ` · ${lastActivity.author}` : ""}</span></div>}
+        <button className="presencepill" onClick={() => setPresenceOpen((o) => !o)} title="Who is online" aria-label="Who is online"><span className="live-dot" />{onlineCount} online</button>
         <div className="whoami"><button className="linklike" style={{ fontWeight: 600, color: "var(--fg)" }} title="Edit your name" onClick={() => setProfileOpen(true)}>{me.name}</button><span className="rolepill">{me.role === "ADMIN" ? "Lead PM" : me.role === "PM" ? "PM" : "Viewer"}</span></div>
         <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
         {isAdmin && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
@@ -341,8 +385,8 @@ export default function Dashboard({ me }: { me: Me }) {
 
       <main>
         {loading ? <div className="empty"><h3>Loading…</h3></div>
-          : productBoardId ? <ProductBoard product={productById[productBoardId]} tasks={tasks.filter((t) => t.productId === productBoardId)} asOf={asOf} activity={activity} pbView={pbView} setPbView={(v) => { setPbView(v); lsSet("pdt_pbview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onBack={() => setProductBoardId(null)} onOpenTask={setDrawerTaskId} onAdd={() => setTaskModal({ open: true, editing: null, preProduct: productBoardId })} onMove={moveStatus} />
-          : view === "board" ? <Board tasks={visible} allCount={scopedTasks.length} asOf={asOf} activity={activity} boardView={boardView} setBoardView={(v) => { setBoardView(v); lsSet("pdt_bview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onOpenTask={setDrawerTaskId} onMove={moveStatus} />
+          : productBoardId ? <ProductBoard product={productById[productBoardId]} tasks={tasks.filter((t) => t.productId === productBoardId)} asOf={asOf} activity={activity} pbView={pbView} setPbView={(v) => { setPbView(v); lsSet("pdt_pbview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onBack={() => setProductBoardId(null)} onOpenTask={setDrawerTaskId} onAdd={() => setTaskModal({ open: true, editing: null, preProduct: productBoardId })} onMove={moveStatus} onHlPresets={() => setHlPresetsOpen(true)} />
+          : view === "board" ? <Board tasks={visible} allCount={scopedTasks.length} asOf={asOf} activity={activity} boardView={boardView} setBoardView={(v) => { setBoardView(v); lsSet("pdt_bview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onOpenTask={setDrawerTaskId} onMove={moveStatus} onHlPresets={() => setHlPresetsOpen(true)} />
           : view === "products" || view === "myproducts" ? <ProductsView products={view === "myproducts" ? myProducts : scopedProducts} tasks={scopedTasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} isAdmin={isAdmin} onCreate={() => setProdCreateOpen(true)} onImport={() => setImportOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
           : view === "sheet" ? <Sheet tasks={visible} asOf={asOf} activity={activity} dispName={dispName} onOpenTask={setDrawerTaskId} />
           : view === "report" ? <Report tasks={scopedTasks} activity={scopedActivity} dispName={dispName} range={range} setRange={setRange} eventText={eventText} />
@@ -393,8 +437,14 @@ export default function Dashboard({ me }: { me: Me }) {
 
       {groupsModalOpen && <GroupsModal groups={groups} products={products} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
 
+      {presenceOpen && <PresencePanel members={presence} meId={me.id} onClose={() => setPresenceOpen(false)} />}
+
+      {hlMenu && <HighlightMenu taskId={hlMenu.taskId} x={hlMenu.x} y={hlMenu.y} presets={hlPresets} current={highlights[hlMenu.taskId]} onPick={(c) => { setHighlight(hlMenu.taskId, c); setHlMenu(null); }} onEditPresets={() => { setHlMenu(null); setHlPresetsOpen(true); }} onClose={() => setHlMenu(null)} />}
+
+      {hlPresetsOpen && <HighlightPresetsModal presets={hlPresets} onClose={() => setHlPresetsOpen(false)} onSaved={(p) => { setHlPresets(p); setHlPresetsOpen(false); flash("Highlight presets saved"); }} flash={flash} />}
+
       {toast && <div className="toast">{toast}</div>}
-    </>
+    </HLContext.Provider>
   );
 
   async function toggleDecom(id: string) {
@@ -480,6 +530,7 @@ function SortSelect({ value, onChange }: { value: string; onChange: (s: string) 
 function KanbanBoard({ tasks, activity, asOf, cmpTasks, dispName, canWrite, onOpenTask, onMove }: {
   tasks: Task[]; activity: Activity[]; asOf: string; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; canWrite: boolean; onOpenTask: (id: string) => void; onMove: (id: string, ns: StatusKey) => void;
 }) {
+  const hl = useHl();
   const [over, setOver] = useState<string | null>(null);
   const drag = useRef<string | null>(null);
   const groups: Record<string, Task[]> = {}; REAL.forEach((s) => (groups[s] = []));
@@ -498,13 +549,14 @@ function KanbanBoard({ tasks, activity, asOf, cmpTasks, dispName, canWrite, onOp
             <div className="cards">
               {g.map((t) => {
                 const e = effectiveStatus(t, asOf || null, activity);
+                const c = hl.color(t.id);
                 return (
                   <div key={t.id} className="card" draggable={canDrag}
-                    style={{ ["--sc" as string]: `var(${e.overdue ? "--s-overdue" : statusMeta(t.status).colorVar})` }}
+                    style={{ ["--sc" as string]: `var(${e.overdue ? "--s-overdue" : statusMeta(t.status).colorVar})`, ...(c ? { background: hlTint(c) } : {}) }}
                     onDragStart={(ev) => { drag.current = t.id; try { ev.dataTransfer.setData("text/plain", t.id); ev.dataTransfer.effectAllowed = "move"; } catch {} }}
                     onDragEnd={() => { drag.current = null; }}
                     onClick={() => onOpenTask(t.id)}>
-                    <div className="tt-row"><div className="title">{t.title}</div><PrBadge t={t} /></div>
+                    <div className="tt-row"><div className="title">{t.title}</div><span className="tt-actions"><PrBadge t={t} /><HighlightDot color={c} onClick={(ev) => hl.open(t.id, ev)} /></span></div>
                     {e.overdue ? <div style={{ marginTop: 6 }}><Chip status="OVERDUE" /></div> : null}
                     {cardMeta(t, dispName, e.overdue)}
                   </div>
@@ -519,12 +571,13 @@ function KanbanBoard({ tasks, activity, asOf, cmpTasks, dispName, canWrite, onOp
 }
 
 function GridBoard({ tasks, activity, asOf, cmpTasks, dispName, onOpenTask }: { tasks: Task[]; activity: Activity[]; asOf: string; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; onOpenTask: (id: string) => void; }) {
+  const hl = useHl();
   const arr = [...tasks].sort(cmpTasks);
   return (
     <div className="board-grid">
-      {arr.map((t) => { const e = effectiveStatus(t, asOf || null, activity); return (
-        <div key={t.id} className="card" style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})` }} onClick={() => onOpenTask(t.id)}>
-          <div className="tt-row"><div className="title">{t.title}</div><PrBadge t={t} /></div>
+      {arr.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const c = hl.color(t.id); return (
+        <div key={t.id} className="card" style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})`, ...(c ? { background: hlTint(c) } : {}) }} onClick={() => onOpenTask(t.id)}>
+          <div className="tt-row"><div className="title">{t.title}</div><span className="tt-actions"><PrBadge t={t} /><HighlightDot color={c} onClick={(ev) => hl.open(t.id, ev)} /></span></div>
           <div style={{ marginTop: 6 }}><Chip status={e.status} /></div>
           {cardMeta(t, dispName, e.overdue)}
         </div>
@@ -534,14 +587,16 @@ function GridBoard({ tasks, activity, asOf, cmpTasks, dispName, onOpenTask }: { 
 }
 
 function ListBoard({ tasks, activity, asOf, cmpTasks, dispName, onOpenTask }: { tasks: Task[]; activity: Activity[]; asOf: string; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; onOpenTask: (id: string) => void; }) {
+  const hl = useHl();
   const arr = [...tasks].sort(cmpTasks);
   return (
     <div className="sheetwrap">
       <table className="sheet">
-        <thead><tr><th>Pri</th><th>Task</th><th>Product</th><th>Owner</th><th>Team</th><th>Status</th><th>Timeline</th><th>Request</th><th>Last update</th></tr></thead>
+        <thead><tr><th aria-label="Highlight"></th><th>Pri</th><th>Task</th><th>Product</th><th>Owner</th><th>Team</th><th>Status</th><th>Timeline</th><th>Request</th><th>Last update</th></tr></thead>
         <tbody>
-          {arr.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const lu = lastUpdateFor(t.id, activity); return (
-            <tr key={t.id} className="rowbtn" onClick={() => onOpenTask(t.id)}>
+          {arr.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const lu = lastUpdateFor(t.id, activity); const c = hl.color(t.id); return (
+            <tr key={t.id} className="rowbtn" style={c ? { background: hlTint(c) } : undefined} onClick={() => onOpenTask(t.id)}>
+              <td><HighlightDot color={c} onClick={(ev) => hl.open(t.id, ev)} /></td>
               <td><PrBadge t={t} /></td>
               <td><div className="title">{t.title}</div>{t.blocker ? <div className="hint" style={{ color: "var(--s-overdue)" }}>⚑ {t.blocker}</div> : null}</td>
               <td>{dispName(t.productId)}</td><td>{t.owner || "-"}</td><td>{t.team}</td>
@@ -557,13 +612,15 @@ function ListBoard({ tasks, activity, asOf, cmpTasks, dispName, onOpenTask }: { 
   );
 }
 
-function Board(props: { tasks: Task[]; allCount: number; asOf: string; activity: Activity[]; boardView: BoardView; setBoardView: (v: BoardView) => void; boardSort: string; setBoardSort: (s: string) => void; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; canWrite: boolean; onOpenTask: (id: string) => void; onMove: (id: string, ns: StatusKey) => void; }) {
-  const { tasks, allCount, asOf, activity, boardView, setBoardView, boardSort, setBoardSort, cmpTasks, dispName, canWrite, onOpenTask, onMove } = props;
+function Board(props: { tasks: Task[]; allCount: number; asOf: string; activity: Activity[]; boardView: BoardView; setBoardView: (v: BoardView) => void; boardSort: string; setBoardSort: (s: string) => void; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; canWrite: boolean; onOpenTask: (id: string) => void; onMove: (id: string, ns: StatusKey) => void; onHlPresets: () => void; }) {
+  const { tasks, allCount, asOf, activity, boardView, setBoardView, boardSort, setBoardSort, cmpTasks, dispName, canWrite, onOpenTask, onMove, onHlPresets } = props;
   return (
     <>
       <div className="pbbar">
         <ViewSwitch value={boardView} onChange={setBoardView} />
-        {boardView !== "kanban" && <><span className="grow" /><SortSelect value={boardSort} onChange={setBoardSort} /></>}
+        {boardView !== "kanban" && <SortSelect value={boardSort} onChange={setBoardSort} />}
+        <span className="grow" />
+        <HighlightPresetButton onClick={onHlPresets} />
       </div>
       {!tasks.length ? (
         <div className="empty"><h3>{allCount ? "No tasks match these filters" : "No tasks yet"}</h3><p>{allCount ? "Adjust or clear the filters to see more." : canWrite ? "Add the first deliverable with + Task." : "Nothing has been added yet."}</p></div>
@@ -574,8 +631,8 @@ function Board(props: { tasks: Task[]; allCount: number; asOf: string; activity:
   );
 }
 
-function ProductBoard(props: { product?: Product; tasks: Task[]; asOf: string; activity: Activity[]; pbView: BoardView; setPbView: (v: BoardView) => void; boardSort: string; setBoardSort: (s: string) => void; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; canWrite: boolean; onBack: () => void; onOpenTask: (id: string) => void; onAdd: () => void; onMove: (id: string, ns: StatusKey) => void; }) {
-  const { product, tasks, asOf, activity, pbView, setPbView, boardSort, setBoardSort, cmpTasks, dispName, canWrite, onBack, onOpenTask, onAdd, onMove } = props;
+function ProductBoard(props: { product?: Product; tasks: Task[]; asOf: string; activity: Activity[]; pbView: BoardView; setPbView: (v: BoardView) => void; boardSort: string; setBoardSort: (s: string) => void; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; canWrite: boolean; onBack: () => void; onOpenTask: (id: string) => void; onAdd: () => void; onMove: (id: string, ns: StatusKey) => void; onHlPresets: () => void; }) {
+  const { product, tasks, asOf, activity, pbView, setPbView, boardSort, setBoardSort, cmpTasks, dispName, canWrite, onBack, onOpenTask, onAdd, onMove, onHlPresets } = props;
   if (!product) { onBack(); return null; }
   return (
     <>
@@ -585,6 +642,7 @@ function ProductBoard(props: { product?: Product; tasks: Task[]; asOf: string; a
         <span className="grow" />
         <ViewSwitch value={pbView} onChange={setPbView} />
         {pbView !== "kanban" && <SortSelect value={boardSort} onChange={setBoardSort} />}
+        <HighlightPresetButton onClick={onHlPresets} />
         {product.decommissioned ? <span className="decbadge" style={{ margin: 0 }}>Decommissioned</span> : canWrite ? <button className="btn primary sm" onClick={onAdd}>+ Task</button> : null}
       </div>
       {!tasks.length ? (
@@ -598,15 +656,17 @@ function ProductBoard(props: { product?: Product; tasks: Task[]; asOf: string; a
 
 // ---------------- Sheet ----------------
 function Sheet({ tasks, asOf, activity, dispName, onOpenTask }: { tasks: Task[]; asOf: string; activity: Activity[]; dispName: (id: string | null) => string; onOpenTask: (id: string) => void; }) {
+  const hl = useHl();
   if (!tasks.length) return <div className="empty"><h3>No tasks to show</h3></div>;
   const sorted = [...tasks].sort((a, b) => { const ea = effectiveStatus(a, asOf || null, activity), eb = effectiveStatus(b, asOf || null, activity); const i = ORDER.indexOf(ea.status) - ORDER.indexOf(eb.status); return i || (a.dueDate || "").localeCompare(b.dueDate || ""); });
   return (
     <div className="sheetwrap">
       <table className="sheet">
-        <thead><tr><th>Task</th><th>Product</th><th>Team</th><th>Owner</th><th>Status</th><th>Timeline</th><th>Request</th><th>Last update</th></tr></thead>
+        <thead><tr><th aria-label="Highlight"></th><th>Task</th><th>Product</th><th>Team</th><th>Owner</th><th>Status</th><th>Timeline</th><th>Request</th><th>Last update</th></tr></thead>
         <tbody>
-          {sorted.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const lu = lastUpdateFor(t.id, activity); return (
-            <tr key={t.id} className="rowbtn" onClick={() => onOpenTask(t.id)}>
+          {sorted.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const lu = lastUpdateFor(t.id, activity); const c = hl.color(t.id); return (
+            <tr key={t.id} className="rowbtn" style={c ? { background: hlTint(c) } : undefined} onClick={() => onOpenTask(t.id)}>
+              <td><HighlightDot color={c} onClick={(ev) => hl.open(t.id, ev)} /></td>
               <td><div className="title">{t.title}</div>{t.blocker ? <div className="hint" style={{ color: "var(--s-overdue)" }}>⚑ {t.blocker}</div> : null}</td>
               <td>{dispName(t.productId)}</td><td>{t.team}</td><td>{t.owner || "-"}</td>
               <td><Chip status={e.status} /></td>
@@ -759,6 +819,7 @@ function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "card
 }
 
 function ProductDetail({ product, tasks, activity, asOf, canWrite, onClose, onOpenTask, onBoard, onAdd, onSettings }: { product: Product; tasks: Task[]; activity: Activity[]; asOf: string; canWrite: boolean; onClose: () => void; onOpenTask: (id: string) => void; onBoard: () => void; onAdd: () => void; onSettings: () => void; }) {
+  const hl = useHl();
   const list = [...tasks].sort((a, b) => { const ea = effectiveStatus(a, asOf || null, activity), eb = effectiveStatus(b, asOf || null, activity); return ORDER.indexOf(ea.status) - ORDER.indexOf(eb.status) || (a.dueDate || "").localeCompare(b.dueDate || ""); });
   return (
     <>
@@ -781,9 +842,9 @@ function ProductDetail({ product, tasks, activity, asOf, canWrite, onClose, onOp
             <div className="empty" style={{ padding: "30px 10px" }}><h3>No tasks under this product yet</h3><p>{product.decommissioned ? "This product is decommissioned." : "Add the first task with the button above. It shows on the Main Board too."}</p></div>
           ) : (
             <div className="pdlist">
-              {list.map((t) => { const e = effectiveStatus(t, asOf || null, activity); return (
-                <button key={t.id} className="pdtask" style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})` }} onClick={() => onOpenTask(t.id)}>
-                  <div className="pdtask-top"><span className="title">{t.title}</span><Chip status={e.status} /></div>
+              {list.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const c = hl.color(t.id); return (
+                <button key={t.id} className="pdtask" style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})`, ...(c ? { background: hlTint(c) } : {}) }} onClick={() => onOpenTask(t.id)}>
+                  <div className="pdtask-top"><span className="title">{t.title}</span><span className="tt-actions"><Chip status={e.status} /><HighlightDot color={c} onClick={(ev) => hl.open(t.id, ev)} /></span></div>
                   {t.context ? <div className="ctxpreview">{t.context}</div> : null}
                   <div className="meta"><span className="who">{t.owner || "-"}</span><span>{t.team}</span><span className="tnum"><span style={{ opacity: 0.7 }}>Timeline:</span> {timelineText(t)}</span>{t.serviceRequest ? <span className="sr">{t.serviceRequest}</span> : null}</div>
                 </button>
@@ -1301,6 +1362,98 @@ function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }
               </div>
             </>
           )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------- Highlights & presence ----------------
+function HighlightDot({ color, onClick }: { color?: string; onClick: (e: React.MouseEvent) => void }) {
+  return (
+    <button type="button" className="hldot" aria-label={color ? "Change highlight" : "Highlight task"} title="Highlight"
+      onClick={(e) => { e.stopPropagation(); onClick(e); }}
+      style={color ? { background: color, borderColor: color } : undefined}>
+      {!color && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h16" /><path d="M14 4l6 6-9 9H5v-6z" /></svg>}
+    </button>
+  );
+}
+function HighlightPresetButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="btn ghost sm" onClick={onClick} title="Highlight presets" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h16" /><path d="M14 4l6 6-9 9H5v-6z" /></svg>
+      Highlight
+    </button>
+  );
+}
+function HighlightMenu({ taskId, x, y, presets, current, onPick, onEditPresets, onClose }: { taskId: string; x: number; y: number; presets: HlPreset[]; current?: string; onPick: (color: string | null) => void; onEditPresets: () => void; onClose: () => void; }) {
+  void taskId;
+  const [custom, setCustom] = useState(current && !presets.some((p) => p.color.toLowerCase() === current.toLowerCase()) && /^#[0-9a-fA-F]{6}$/.test(current) ? current : "#8B5CF6");
+  const left = Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 244);
+  const top = Math.min(y, (typeof window !== "undefined" ? window.innerHeight : 800) - 240);
+  return (
+    <>
+      <div className="hlscrim" onClick={onClose} />
+      <div className="hlmenu" style={{ left, top }} role="menu">
+        <div className="hlmenu-title">Highlight</div>
+        {presets.map((p, i) => (
+          <button key={i} type="button" className={`hlopt${current && current.toLowerCase() === p.color.toLowerCase() ? " on" : ""}`} onClick={() => onPick(p.color)}>
+            <span className="hlsw" style={{ background: p.color }} />{p.name}
+          </button>
+        ))}
+        <div className="hlcustom">
+          <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(custom) ? custom : "#8B5CF6"} onChange={(e) => setCustom(e.target.value)} aria-label="Custom highlight color" />
+          <button type="button" className="btn sm" onClick={() => onPick(custom)}>Apply color</button>
+        </div>
+        {current ? <button type="button" className="hlopt remove" onClick={() => onPick(null)}>Remove highlight</button> : null}
+        <button type="button" className="hllink" onClick={onEditPresets}>Edit presets</button>
+      </div>
+    </>
+  );
+}
+function HighlightPresetsModal({ presets, onClose, onSaved, flash }: { presets: HlPreset[]; onClose: () => void; onSaved: (p: HlPreset[]) => void; flash: (m: string) => void; }) {
+  const [p, setP] = useState<HlPreset[]>(presets.map((x) => ({ ...x })));
+  const [busy, setBusy] = useState(false);
+  function set(i: number, k: keyof HlPreset, v: string) { setP((prev) => prev.map((x, j) => (j === i ? { ...x, [k]: v } : x))); }
+  async function save() {
+    if (p.some((x) => !x.name.trim())) { flash("Give each preset a name."); return; }
+    setBusy(true);
+    try { const d = await api("/api/me/highlight-presets", { method: "PATCH", body: JSON.stringify({ presets: p.map((x) => ({ name: x.name.trim(), color: x.color })) }) }); onSaved(d.presets); }
+    catch (e) { flash((e as Error).message); setBusy(false); }
+  }
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Highlight presets</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          <p className="lead" style={{ marginBottom: 12 }}>Two quick-pick colors for highlighting tasks. Highlights are private to you and stay with you across the board, list and sheet.</p>
+          {p.map((x, i) => (
+            <div key={i} className="two" style={{ alignItems: "flex-end" }}>
+              <div className="field"><label>Preset {i + 1} name</label><input value={x.name} onChange={(e) => set(i, "name", e.target.value)} maxLength={40} placeholder={i === 0 ? "e.g. Focus" : "e.g. Risk"} /></div>
+              <div className="field"><label>Color</label><input type="color" value={/^#[0-9a-fA-F]{6}$/.test(x.color) ? x.color : "#FDE047"} onChange={(e) => set(i, "color", e.target.value)} style={{ width: "100%", height: 40, padding: 2 }} /></div>
+            </div>
+          ))}
+        </div>
+        <div className="dfoot"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save presets"}</button></div>
+      </div>
+    </>
+  );
+}
+function PresencePanel({ members, meId, onClose }: { members: PresenceMember[]; meId: string; onClose: () => void; }) {
+  const online = members.filter((m) => m.online);
+  const offline = members.filter((m) => !m.online);
+  const roleLabel = (r: Role) => (r === "ADMIN" ? "Lead PM" : r === "PM" ? "PM" : "Viewer");
+  return (
+    <>
+      <div className="hlscrim" onClick={onClose} />
+      <div className="presencepanel" role="dialog" aria-label="Who is online">
+        <div className="pp-head"><b>{online.length} online</b><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="pp-body">
+          {online.map((m) => <div key={m.id} className="pp-row"><span className="live-dot" /><span className="pp-name">{m.name}{m.id === meId ? " (you)" : ""}</span><span className="pp-role">{roleLabel(m.role)}</span></div>)}
+          {online.length === 0 ? <div className="hint" style={{ padding: "4px 2px" }}>No one is online right now.</div> : null}
+          {offline.length ? <div className="pp-sep">Offline</div> : null}
+          {offline.map((m) => <div key={m.id} className="pp-row off"><span className="idle-dot" /><span className="pp-name">{m.name}{m.id === meId ? " (you)" : ""}</span><span className="pp-last">{m.lastSeenAt ? relTime(m.lastSeenAt) : "never"}</span></div>)}
         </div>
       </div>
     </>

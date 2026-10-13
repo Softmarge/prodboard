@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { withAuth, json } from "@/lib/api";
-import { TEAM_BASE } from "@/lib/constants";
+import { TEAM_BASE, HL_PRESET_DEFAULTS } from "@/lib/constants";
 
 export const runtime = "nodejs";
 
@@ -8,13 +8,14 @@ export const runtime = "nodejs";
 // A plain PM is scoped to the products they manage (product.pm matches their
 // name); Admin (Lead PM) and Viewer see the whole organization.
 export const GET = withAuth(async (user) => {
-  const [org, allProducts, allTasks, allActivity, groups, me] = await Promise.all([
+  const [org, allProducts, allTasks, allActivity, groups, me, highlightRows] = await Promise.all([
     prisma.organization.findUnique({ where: { id: user.oid } }),
     prisma.product.findMany({ where: { organizationId: user.oid }, orderBy: { name: "asc" } }),
     prisma.task.findMany({ where: { organizationId: user.oid }, orderBy: { createdAt: "desc" } }),
     prisma.activity.findMany({ where: { organizationId: user.oid }, orderBy: { ts: "desc" }, take: 1000 }),
     prisma.productGroup.findMany({ where: { userId: user.uid }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, productIds: true } }),
-    prisma.user.findUnique({ where: { id: user.uid }, select: { activeGroupId: true } }),
+    prisma.user.findUnique({ where: { id: user.uid }, select: { activeGroupId: true, hlName1: true, hlColor1: true, hlName2: true, hlColor2: true } }),
+    prisma.taskHighlight.findMany({ where: { userId: user.uid }, select: { taskId: true, color: true } }),
   ]);
   // Only honor an active group that still exists for this user.
   const activeGroupId = me?.activeGroupId && groups.some((g: any) => g.id === me.activeGroupId) ? me.activeGroupId : null;
@@ -39,6 +40,14 @@ export const GET = withAuth(async (user) => {
   [...TEAM_BASE, ...(org?.teams ?? [])].forEach((t) => {
     if (t && !seen.has(t)) { seen.add(t); teams.push(t); }
   });
+
+  const highlights: Record<string, string> = {};
+  highlightRows.forEach((h: any) => { highlights[h.taskId] = h.color; });
+  const highlightPresets = [
+    { name: me?.hlName1 || HL_PRESET_DEFAULTS[0].name, color: me?.hlColor1 || HL_PRESET_DEFAULTS[0].color },
+    { name: me?.hlName2 || HL_PRESET_DEFAULTS[1].name, color: me?.hlColor2 || HL_PRESET_DEFAULTS[1].color },
+  ];
+
   return json({
     me: { id: user.uid, name: user.name, email: user.email, role: user.role },
     organization: org ? { id: org.id, name: org.name } : null,
@@ -48,5 +57,7 @@ export const GET = withAuth(async (user) => {
     teams,
     groups,
     activeGroupId,
+    highlights,
+    highlightPresets,
   });
 });
