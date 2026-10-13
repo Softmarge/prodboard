@@ -260,7 +260,7 @@ export default function Dashboard({ me }: { me: Me }) {
           <div className="mk">PB</div>
           <div style={{ minWidth: 0 }}>
             <div className="nm">ProdBoard</div>
-            <div className="sub">{orgName || "Tech delivery visibility"}</div>
+            <div className="sub">{orgName ? `Organization: ${orgName}` : "Tech delivery visibility"}</div>
           </div>
         </div>
         <div className="spacer" />
