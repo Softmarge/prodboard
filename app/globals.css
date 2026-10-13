@@ -74,6 +74,11 @@ select,input,textarea{font-family:inherit;font-size:inherit;color:var(--fg)}
 .gpick:hover{background:var(--surface-2)}
 .gpick.on{border-color:var(--accent);background:var(--accent-soft)}
 .gpick-name{font-weight:500;overflow-wrap:anywhere}
+.gpickrow{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer}
+.gpickrow:last-child{border-bottom:0}
+.gpickrow:hover{background:var(--surface-2)}
+.gpickrow.on{background:var(--accent-soft)}
+.gpickrow .gpick-name{font-weight:600}
 .filterrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .filterrow select,.filterrow input[type="search"]{padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);min-width:0}
 .filterrow input[type="search"]{flex:1;min-width:130px}

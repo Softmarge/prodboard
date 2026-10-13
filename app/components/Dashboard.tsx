@@ -898,7 +898,9 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
   const hist = activity.filter((a) => a.taskId === task.id).sort((a, b) => +new Date(b.ts) - +new Date(a.ts));
   const [status, setStatus] = useState<StatusKey>(task.status);
   const [note, setNote] = useState(""); const [blocker, setBlocker] = useState(task.blocker || "");
+  const [context, setContext] = useState(task.context || "");
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  const contextDirty = context.trim() !== (task.context || "").trim();
   function histText(a: Activity) {
     if (a.type === "created") return `Created as ${a.toStatus ? statusMeta(a.toStatus).label : ""}`;
     if (a.type === "status") return `Status to ${a.toStatus ? statusMeta(a.toStatus).label : ""}${a.fromStatus ? ` (from ${statusMeta(a.fromStatus).label})` : ""}`;
@@ -911,6 +913,12 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
     try { await api(`/api/tasks/${task.id}/updates`, { method: "POST", body: JSON.stringify({ status, note, blocker }) }); setNote(""); onPosted("Update posted"); onClose(); }
     catch (ex) { setErr((ex as Error).message); setBusy(false); }
   }
+  async function saveContext() {
+    if (!contextDirty) return;
+    setErr(""); setBusy(true);
+    try { await api(`/api/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ context }) }); onPosted(task.context ? "Context updated" : "Context added"); }
+    catch (ex) { setErr((ex as Error).message); } finally { setBusy(false); }
+  }
   return (
     <>
       <div className="scrim" onClick={onClose} />
@@ -918,7 +926,15 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
         <div className="dhead"><h2>{task.title}</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
           <div style={{ marginBottom: 12 }}><Chip status={e.status} />{asOf ? <span className="hint"> as of {fmtDate(asOf + "T12:00:00")}</span> : null}</div>
-          {task.context ? <div className="ctxbox"><div className="ctxlabel">Context</div><div className="ctxbody">{task.context}</div></div> : null}
+          {canWrite ? (
+            <div className="ctxbox">
+              <div className="ctxlabel">Context <span className="hint" style={{ textTransform: "none", letterSpacing: 0 }}>· optional, for stakeholders</span></div>
+              <textarea value={context} onChange={(e2) => setContext(e2.target.value)} rows={3} placeholder="A short intro so stakeholders understand what this task is about and why it matters" style={{ width: "100%", marginTop: 6 }} />
+              {contextDirty && <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}><button className="btn primary sm" onClick={saveContext} disabled={busy}>{busy ? "Saving…" : "Save context"}</button></div>}
+            </div>
+          ) : task.context ? (
+            <div className="ctxbox"><div className="ctxlabel">Context</div><div className="ctxbody">{task.context}</div></div>
+          ) : null}
           <div className="kv">
             <span className="k">Product</span><span className="v">{dispName(task.productId)}</span>
             <span className="k">Team</span><span className="v">{task.team || "-"}</span>
@@ -1241,12 +1257,18 @@ function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }
                 <input type="search" placeholder="Filter products…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ marginBottom: 8 }} />
                 <div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
                   {list.length === 0 ? <div className="hint" style={{ padding: 10 }}>No products match.</div>
-                    : pickView === "list" ? list.map((p) => (
-                      <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
-                        <input type="checkbox" checked={picked.has(p.id)} onChange={() => toggle(p.id)} />
-                        <span style={{ flex: 1 }}>{p.name}{p.type ? <span className="hint"> · {p.type}</span> : null}</span>
-                      </label>
-                    ))
+                    : pickView === "list" ? list.map((p) => {
+                      const on = picked.has(p.id);
+                      return (
+                        <label key={p.id} className={`gpickrow${on ? " on" : ""}`}>
+                          <input type="checkbox" checked={on} onChange={() => toggle(p.id)} />
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span className="gpick-name">{p.name}</span>
+                            <span className="hint" style={{ display: "block" }}>PM: {p.pm || "unassigned"}{p.type ? ` · ${p.type}` : ""}</span>
+                          </span>
+                        </label>
+                      );
+                    })
                     : (
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: 10 }}>
                         {list.map((p) => {
