@@ -1,5 +1,5 @@
 export type Role = "ADMIN" | "PM" | "VIEWER";
-export type StatusKey = "NOT_STARTED" | "IN_PROGRESS" | "IN_REVIEW" | "COMPLETE";
+export type StatusKey = "NOT_STARTED" | "IN_PROGRESS" | "BLOCKED" | "IN_REVIEW" | "COMPLETE";
 export type EffKey = StatusKey | "OVERDUE";
 
 export type Product = {
@@ -45,12 +45,13 @@ export type Group = { id: string; name: string; productIds: string[] };
 export const STATUS: Record<string, { label: string; cls: string; colorVar: string }> = {
   NOT_STARTED: { label: "Not started", cls: "ns", colorVar: "--s-notstarted" },
   IN_PROGRESS: { label: "In progress", cls: "ip", colorVar: "--s-progress" },
+  BLOCKED: { label: "Blocked", cls: "bl", colorVar: "--s-blocked" },
   IN_REVIEW: { label: "In review", cls: "rv", colorVar: "--s-review" },
   COMPLETE: { label: "Complete", cls: "cp", colorVar: "--s-complete" },
   OVERDUE: { label: "Overdue", cls: "ov", colorVar: "--s-overdue" },
 };
-export const ORDER: EffKey[] = ["OVERDUE", "IN_PROGRESS", "IN_REVIEW", "NOT_STARTED", "COMPLETE"];
-export const EDIT_STATUSES: StatusKey[] = ["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "COMPLETE"];
+export const ORDER: EffKey[] = ["OVERDUE", "BLOCKED", "IN_PROGRESS", "IN_REVIEW", "NOT_STARTED", "COMPLETE"];
+export const EDIT_STATUSES: StatusKey[] = ["NOT_STARTED", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "COMPLETE"];
 export const PTYPES = ["Mobile App", "Website", "Web App", "USSD", "Backend / API", "Other"];
 export function priorityOf(t: Task): number {
   return t.priority && t.priority >= 1 && t.priority <= 3 ? t.priority : 2;
@@ -115,7 +116,7 @@ export function effectiveStatus(
 ): { status: EffKey; overdue: boolean } {
   if (!asOf) {
     const due = isoToYMD(t.dueDate);
-    const over = t.status !== "COMPLETE" && !!due && due < todayYMD();
+    const over = t.status !== "COMPLETE" && t.status !== "BLOCKED" && !!due && due < todayYMD();
     return { status: over ? "OVERDUE" : t.status, overdue: over };
   }
   // reconstruct status as of close of business on asOf
@@ -133,7 +134,7 @@ export function effectiveStatus(
   }
   const base = (best?.toStatus as StatusKey) || t.status;
   const due = isoToYMD(t.dueDate);
-  const over = base !== "COMPLETE" && !!due && due < asOf;
+  const over = base !== "COMPLETE" && base !== "BLOCKED" && !!due && due < asOf;
   return { status: over ? "OVERDUE" : base, overdue: over };
 }
 

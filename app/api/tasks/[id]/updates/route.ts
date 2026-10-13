@@ -4,7 +4,7 @@ import { withAuth, json, error, canWrite } from "@/lib/api";
 
 export const runtime = "nodejs";
 
-const STATUSES = ["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "COMPLETE"] as const;
+const STATUSES = ["NOT_STARTED", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "COMPLETE"] as const;
 
 // Post a progress update: optional status change, optional note, optional blocker edit.
 const Body = z.object({
@@ -36,6 +36,11 @@ export const POST = withAuth(async (user, req, params) => {
   // Moving a task out of Not started requires a start date and a due date.
   if (statusChanged && data.status !== "NOT_STARTED" && (!task.startDate || !task.dueDate)) {
     return error("Set a start date and due date first (use Edit details) before moving this task out of Not started.");
+  }
+  // A blocked task must carry a reason (the blocker).
+  const resultingBlocker = data.blocker !== undefined ? data.blocker.trim() : (task.blocker || "");
+  if (data.status === "BLOCKED" && !resultingBlocker) {
+    return error("A blocked task needs a reason. Add a blocker before marking it Blocked.");
   }
 
   const patch: Record<string, unknown> = {};

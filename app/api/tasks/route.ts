@@ -5,7 +5,7 @@ import { isScopedPM, managedProductIds } from "@/lib/scope";
 
 export const runtime = "nodejs";
 
-const STATUSES = ["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "COMPLETE"] as const;
+const STATUSES = ["NOT_STARTED", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "COMPLETE"] as const;
 
 export const GET = withAuth(async (user) => {
   let tasks = await prisma.task.findMany({
@@ -52,6 +52,9 @@ export const POST = withAuth(async (user, req) => {
   // Dates are optional only while the task is Not started; any active status needs both.
   if (data.status !== "NOT_STARTED" && (!start || !due)) {
     return error("A start date and due date are required unless the task is Not started.");
+  }
+  if (data.status === "BLOCKED" && !(data.blocker || "").trim()) {
+    return error("A blocked task needs a reason. Fill in the blocker.");
   }
 
   // Make sure the product belongs to this org.

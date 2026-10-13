@@ -4,7 +4,7 @@ import { withAuth, json, error, canWrite } from "@/lib/api";
 
 export const runtime = "nodejs";
 
-const STATUSES = ["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "COMPLETE"] as const;
+const STATUSES = ["NOT_STARTED", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "COMPLETE"] as const;
 
 const Patch = z.object({
   title: z.string().min(1).max(240).optional(),
@@ -52,6 +52,10 @@ export const PATCH = withAuth(async (user, req, params) => {
   const nextDue = data.dueDate !== undefined ? toDate(data.dueDate) : existing.dueDate;
   if (nextStatus !== "NOT_STARTED" && (!nextStart || !nextDue)) {
     return error("Set a start date and due date before moving this task out of Not started.");
+  }
+  const nextBlocker = data.blocker !== undefined ? data.blocker.trim() : (existing.blocker || "");
+  if (nextStatus === "BLOCKED" && !nextBlocker) {
+    return error("A blocked task needs a reason. Add a blocker before marking it Blocked.");
   }
 
   const patch: Record<string, unknown> = {};

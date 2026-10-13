@@ -20,6 +20,7 @@ enum Role {
 enum Status {
   NOT_STARTED
   IN_PROGRESS
+  BLOCKED
   IN_REVIEW
   COMPLETE
 }

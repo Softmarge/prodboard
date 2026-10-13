@@ -48,7 +48,7 @@ type MainView = "board" | "myproducts" | "products" | "sheet" | "report" | "acti
 type BoardView = "kanban" | "list" | "grid";
 type Filters = { q: string; team: string; product: string; owner: string; sr: string; status: string; pm: string };
 const EMPTY_FILTERS: Filters = { q: "", team: "", product: "", owner: "", sr: "", status: "", pm: "" };
-const REAL: StatusKey[] = ["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "COMPLETE"];
+const REAL: StatusKey[] = ["NOT_STARTED", "IN_PROGRESS", "BLOCKED", "IN_REVIEW", "COMPLETE"];
 
 async function api(path: string, opts?: RequestInit) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
@@ -266,6 +266,12 @@ export default function Dashboard({ me }: { me: Me }) {
       flash(`Set a start and due date to move this to ${statusMeta(ns).label}`);
       return;
     }
+    // A blocked task needs a reason: open the editor to capture it.
+    if (ns === "BLOCKED" && !(t.blocker || "").trim()) {
+      setTaskModal({ open: true, editing: t, preStatus: ns });
+      flash("Add a reason for the blocker to mark this Blocked");
+      return;
+    }
     setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, status: ns } : x))); // optimistic
     try { await api(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status: ns }) }); await reloadWork(); flash(`Moved to ${statusMeta(ns).label}`); }
     catch (e) { flash((e as Error).message); reloadWork(); }
@@ -365,7 +371,7 @@ export default function Dashboard({ me }: { me: Me }) {
             <select value={filters.owner} onChange={(e) => setFilters({ ...filters, owner: e.target.value })} aria-label="Owner"><option value="">All owners</option>{people.map((o) => <option key={o} value={o}>{o}</option>)}</select>
             <select value={filters.sr} onChange={(e) => setFilters({ ...filters, sr: e.target.value })} aria-label="Service request"><option value="">All requests</option>{srList.map((s) => <option key={s} value={s}>{s}</option>)}</select>
             {!isPM && <select value={filters.pm} onChange={(e) => setFilters({ ...filters, pm: e.target.value })} aria-label="PM"><option value="">All PMs</option>{pmList.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
-            <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} aria-label="Status"><option value="">All statuses</option><option value="NOT_STARTED">Not started</option><option value="IN_PROGRESS">In progress</option><option value="IN_REVIEW">In review</option><option value="COMPLETE">Complete</option><option value="OVERDUE">Overdue</option></select>
+            <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} aria-label="Status"><option value="">All statuses</option><option value="NOT_STARTED">Not started</option><option value="IN_PROGRESS">In progress</option><option value="BLOCKED">Blocked</option><option value="IN_REVIEW">In review</option><option value="COMPLETE">Complete</option><option value="OVERDUE">Overdue</option></select>
             <button className="btn ghost sm" onClick={() => setFilters(EMPTY_FILTERS)}>Clear</button>
             <span className="grow" />
             <div className="tt"><label htmlFor="asof">As of</label><input id="asof" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} /></div>
@@ -902,6 +908,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
     if (!owner) return setErr("Pick or add an owner.");
     if (!team) return setErr("Pick a team / function.");
     if (status !== "NOT_STARTED" && (!start || !due)) return setErr("A start date and due date are required unless the task is Not started.");
+    if (status === "BLOCKED" && !blocker.trim()) return setErr("A blocked task needs a reason. Fill in the blocker.");
     setErr(""); setBusy(true);
     const body = { title, context, productId, owner, team, priority, status, startDate: start, dueDate: due, serviceRequest: sr, blocker };
     try {
@@ -961,7 +968,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
             <div className={status !== "NOT_STARTED" ? "field req" : "field"}><label>Due date{status === "NOT_STARTED" ? <span className="hint"> (optional)</span> : null}</label><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></div>
           </div>
           {status === "NOT_STARTED" ? <div className="hint" style={{ marginTop: -4 }}>Not started tasks can skip dates. You will be asked to set them when the task moves to In progress.</div> : null}
-          <div className="field"><label>Blocker (optional)</label><input value={blocker} onChange={(e) => setBlocker(e.target.value)} placeholder="why it is stuck, if it is" /></div>
+          <div className={status === "BLOCKED" ? "field req" : "field"}><label>Blocker{status === "BLOCKED" ? " (required)" : " (optional)"}</label><input value={blocker} onChange={(e) => setBlocker(e.target.value)} placeholder={status === "BLOCKED" ? "why it is blocked and what it is waiting on" : "why it is stuck, if it is"} /></div>
           {err && <div className="err">{err}</div>}
         </div>
         <div className="dfoot"><button className="btn" onClick={requestClose}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create task"}</button></div>
@@ -1045,7 +1052,8 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
               <div className="field"><label>Change status</label><select value={status} onChange={(e2) => setStatus(e2.target.value as StatusKey)}>{EDIT_STATUSES.map((s) => <option key={s} value={s}>{statusMeta(s).label}</option>)}</select>
                 {status !== "NOT_STARTED" && (!task.startDate || !task.dueDate) ? <div className="hint" style={{ color: "var(--s-overdue)", marginTop: 4 }}>This task has no start or due date. Use “Edit details” to set them before moving it out of Not started.</div> : null}</div>
               <div className="field"><label>Progress note</label><textarea value={note} onChange={(e2) => setNote(e2.target.value)} placeholder="what moved; add evidence the task is alive" /></div>
-              <div className="field"><label>Blocker (optional)</label><input value={blocker} onChange={(e2) => setBlocker(e2.target.value)} placeholder="leave blank if not blocked" /></div>
+              <div className={status === "BLOCKED" ? "field req" : "field"}><label>Blocker{status === "BLOCKED" ? " (required)" : " (optional)"}</label><input value={blocker} onChange={(e2) => setBlocker(e2.target.value)} placeholder={status === "BLOCKED" ? "why it is blocked and what it is waiting on" : "leave blank if not blocked"} />
+                {status === "BLOCKED" && !blocker.trim() ? <div className="hint" style={{ color: "var(--s-overdue)", marginTop: 4 }}>A blocked task needs a reason. Add the blocker to post this.</div> : null}</div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button className="btn sm" onClick={() => onEdit(task)}>Edit details</button><button className="btn primary sm" onClick={post} disabled={busy}>{busy ? "Posting…" : "Post update"}</button></div>
               {err && <div className="err">{err}</div>}
             </div>
