@@ -213,6 +213,14 @@ table.sheet .due.late{color:var(--s-overdue);font-weight:600}
 .segmented button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
 .chkline{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
 .chkline input{accent-color:var(--accent)}
+.viewmenu{position:relative}
+.viewbtn{display:inline-flex;align-items:center;gap:6px}
+.viewbtn .caret{opacity:.7;font-size:10px}
+.viewpop{position:absolute;right:0;top:calc(100% + 4px);z-index:40;min-width:150px;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-sm);box-shadow:0 8px 24px rgba(0,0,0,.25);padding:4px;display:flex;flex-direction:column;gap:2px}
+.viewpop button{text-align:left;padding:8px 10px;border:0;background:transparent;color:var(--fg);border-radius:6px;font-size:13px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.viewpop button:hover{background:var(--surface-2)}
+.viewpop button.on{color:var(--accent);font-weight:600}
+.viewpop button.on::after{content:"✓";font-size:12px}
 .board-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
 .col.drophover{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--accent-soft)}
 .card[draggable="true"]{cursor:grab}

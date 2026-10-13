@@ -431,6 +431,32 @@ function ViewSwitch({ value, onChange }: { value: BoardView; onChange: (v: Board
     </div>
   );
 }
+// A compact "View" dropdown for the products toolbar: two options, Cards or List.
+function ViewMenu({ value, onChange }: { value: "cards" | "list"; onChange: (v: "cards" | "list") => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const pick = (v: "cards" | "list") => { onChange(v); setOpen(false); };
+  return (
+    <div className="viewmenu" ref={ref}>
+      <button type="button" className="btn sm viewbtn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+        View <span className="caret">▾</span>
+      </button>
+      {open && (
+        <div className="viewpop" role="menu">
+          <button type="button" role="menuitemradio" aria-checked={value === "cards"} className={value === "cards" ? "on" : ""} onClick={() => pick("cards")}>Cards</button>
+          <button type="button" role="menuitemradio" aria-checked={value === "list"} className={value === "list" ? "on" : ""} onClick={() => pick("list")}>List</button>
+        </div>
+      )}
+    </div>
+  );
+}
 function SortSelect({ value, onChange }: { value: string; onChange: (s: string) => void }) {
   return (
     <>
@@ -691,7 +717,7 @@ function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "card
         <select id="psort" value={sort} onChange={(e) => setSort(e.target.value)} style={{ padding: "6px 9px", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--surface)" }}>{PSORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         <span className="grow" />
         <label className="chkline"><input type="checkbox" checked={showDecom} onChange={(e) => setShowDecom(e.target.checked)} /> Show decommissioned</label>
-        <div className="segmented"><button aria-pressed={layout === "cards"} onClick={() => setLayout("cards")}>Cards</button><button aria-pressed={layout === "list"} onClick={() => setLayout("list")}>List</button></div>
+        <ViewMenu value={layout} onChange={setLayout} />
       </div>
       {!list.length ? (
         <div className="empty"><h3>{products.length ? "No products to show" : "No products yet"}</h3><p>{products.length ? "Toggle “Show decommissioned” or clear the filter." : "Add your first product with + Product. Every task lives under a product."}</p></div>
