@@ -84,13 +84,13 @@ export default function ResetPage() {
     <div className="authwrap">
       <div className="authcard">
         <div className="brandrow">
-          <div className="logo">
+          <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} aria-label="ProdBoard home">
             <div className="mk">PB</div>
             <div>
               <div className="nm">ProdBoard</div>
               <div className="sub">Tech delivery visibility</div>
             </div>
-          </div>
+          </Link>
         </div>
         <Suspense fallback={<div className="hint">Loading…</div>}>
           <ResetForm />

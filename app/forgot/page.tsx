@@ -35,13 +35,13 @@ export default function ForgotPage() {
     <div className="authwrap">
       <div className="authcard">
         <div className="brandrow">
-          <div className="logo">
+          <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} aria-label="ProdBoard home">
             <div className="mk">PB</div>
             <div>
               <div className="nm">ProdBoard</div>
               <div className="sub">Tech delivery visibility</div>
             </div>
-          </div>
+          </Link>
         </div>
         <h1>Reset your password</h1>
         {sent ? (

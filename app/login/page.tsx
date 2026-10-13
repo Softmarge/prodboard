@@ -39,13 +39,13 @@ export default function LoginPage() {
     <div className="authwrap">
       <div className="authcard">
         <div className="brandrow">
-          <div className="logo">
+          <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} aria-label="ProdBoard home">
             <div className="mk">PB</div>
             <div>
               <div className="nm">ProdBoard</div>
               <div className="sub">Tech delivery visibility</div>
             </div>
-          </div>
+          </Link>
         </div>
         <h1>Sign in</h1>
         <p className="lead">Welcome back. Enter your details to continue.</p>

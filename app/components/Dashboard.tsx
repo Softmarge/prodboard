@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Activity,
   BSORTS,
@@ -256,13 +257,13 @@ export default function Dashboard({ me }: { me: Me }) {
   return (
     <>
       <div className="brand">
-        <div className="logo">
+        <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} title="Go to ProdBoard home" aria-label="ProdBoard home">
           <div className="mk">PB</div>
           <div style={{ minWidth: 0 }}>
             <div className="nm">ProdBoard</div>
             <div className="sub">{orgName ? `Organization: ${orgName}` : "Tech delivery visibility"}</div>
           </div>
-        </div>
+        </Link>
         <div className="spacer" />
         <div className="whoami"><button className="linklike" style={{ fontWeight: 600, color: "var(--fg)" }} title="Edit your name" onClick={() => setProfileOpen(true)}>{me.name}</button><span className="rolepill">{me.role === "ADMIN" ? "Lead PM" : me.role === "PM" ? "PM" : "Viewer"}</span></div>
         <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
