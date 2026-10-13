@@ -262,6 +262,13 @@ td .hldot{margin:0 auto}
 .pp-row .pp-last{font-size:11px;color:var(--muted)}
 .pp-row.off .pp-name{color:var(--muted)}
 .pp-sep{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:10px 8px 4px}
+
+/* ---- unsaved-changes guard ---- */
+.confirmwrap{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px}
+.confirmbox{background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.35);padding:22px;max-width:380px;width:100%}
+.confirmbox h3{margin:0 0 8px;font-size:18px}
+.confirmbox p{margin:0 0 16px;color:var(--muted);line-height:1.5}
+.confirm-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .board-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
 .col.drophover{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--accent-soft)}
 .card[draggable="true"]{cursor:grab}

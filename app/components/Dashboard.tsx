@@ -886,6 +886,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const lockProduct = !editing && !!preProduct;
+  const [confirmExit, setConfirmExit] = useState(false);
 
   const ownerExisting = people.includes(ownerSel);
 
@@ -909,11 +910,17 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
     } catch (e) { setErr((e as Error).message); setBusy(false); }
   }
 
+  // Unsaved input guard: compare to the task being edited, or any typed content for a new task.
+  const dirty = editing
+    ? (title !== (editing.title || "") || context !== (editing.context || "") || blocker !== (editing.blocker || "") || isoToYMD(editing.startDate) !== start || isoToYMD(editing.dueDate) !== due || status !== editing.status || priority !== priorityOf(editing) || (ownerSel && ownerSel !== editing.owner) || ownerNew.trim() !== "")
+    : (!!title.trim() || !!context.trim() || !!blocker.trim() || !!ownerNew.trim() || !!srNew.trim() || !!due || (!!ownerSel && ownerSel !== "__new__"));
+  function requestClose() { if (dirty && !busy) setConfirmExit(true); else onClose(); }
+
   return (
     <>
-      <div className="scrim" onClick={onClose} />
+      <div className="scrim" onClick={requestClose} />
       <div className="modal" role="dialog" aria-modal="true">
-        <div className="dhead"><h2>{editing ? "Edit task" : "New task"}</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dhead"><h2>{editing ? "Edit task" : "New task"}</h2><button className="iconbtn" onClick={requestClose} aria-label="Close">✕</button></div>
         <div className="dbody">
           <div className="field">
             <label>Service request</label>
@@ -957,8 +964,9 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
           <div className="field"><label>Blocker (optional)</label><input value={blocker} onChange={(e) => setBlocker(e.target.value)} placeholder="why it is stuck, if it is" /></div>
           {err && <div className="err">{err}</div>}
         </div>
-        <div className="dfoot"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create task"}</button></div>
+        <div className="dfoot"><button className="btn" onClick={requestClose}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create task"}</button></div>
       </div>
+      {confirmExit && <ConfirmExit what={editing ? `your changes to “${editing.title}”` : "this new task"} saving={busy} onSave={() => { setConfirmExit(false); save(); }} onDiscard={onClose} onCancel={() => setConfirmExit(false)} />}
     </>
   );
 }
@@ -971,30 +979,45 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
   const [note, setNote] = useState(""); const [blocker, setBlocker] = useState(task.blocker || "");
   const [context, setContext] = useState(task.context || "");
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  const [confirmExit, setConfirmExit] = useState(false);
   const contextDirty = context.trim() !== (task.context || "").trim();
+  const postDirty = status !== task.status || !!note.trim() || blocker.trim() !== (task.blocker || "");
+  const dirty = contextDirty || postDirty;
   function histText(a: Activity) {
     if (a.type === "created") return `Created as ${a.toStatus ? statusMeta(a.toStatus).label : ""}`;
     if (a.type === "status") return `Status to ${a.toStatus ? statusMeta(a.toStatus).label : ""}${a.fromStatus ? ` (from ${statusMeta(a.fromStatus).label})` : ""}`;
     if (a.type === "note") return `Note: ${a.content || ""}`;
     return a.content || "Updated";
   }
+  async function doSaveContext() { await api(`/api/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ context }) }); }
+  async function doPost() { await api(`/api/tasks/${task.id}/updates`, { method: "POST", body: JSON.stringify({ status, note, blocker }) }); }
   async function post() {
-    if (status === task.status && !note.trim() && blocker.trim() === (task.blocker || "")) return setErr("Nothing to post. Change status, add a note, or edit the blocker.");
+    if (!postDirty) return setErr("Nothing to post. Change the status, add a note, or edit the blocker.");
     setErr(""); setBusy(true);
-    try { await api(`/api/tasks/${task.id}/updates`, { method: "POST", body: JSON.stringify({ status, note, blocker }) }); setNote(""); onPosted("Update posted"); onClose(); }
+    try { await doPost(); setNote(""); onPosted("Update posted"); onClose(); }
     catch (ex) { setErr((ex as Error).message); setBusy(false); }
   }
   async function saveContext() {
     if (!contextDirty) return;
     setErr(""); setBusy(true);
-    try { await api(`/api/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ context }) }); onPosted(task.context ? "Context updated" : "Context added"); }
+    try { await doSaveContext(); onPosted(task.context ? "Context updated" : "Context added"); }
     catch (ex) { setErr((ex as Error).message); } finally { setBusy(false); }
+  }
+  // Clicking outside or ✕ with unsaved input asks before discarding.
+  function requestClose() { if (dirty) setConfirmExit(true); else onClose(); }
+  async function saveAndExit() {
+    setErr(""); setBusy(true);
+    try {
+      if (contextDirty) await doSaveContext();
+      if (postDirty) await doPost();
+      onPosted("Update saved"); onClose();
+    } catch (ex) { setErr((ex as Error).message); setBusy(false); setConfirmExit(false); }
   }
   return (
     <>
-      <div className="scrim" onClick={onClose} />
+      <div className="scrim" onClick={requestClose} />
       <aside className="drawer open">
-        <div className="dhead"><h2>{task.title}</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dhead"><h2>{task.title}</h2><button className="iconbtn" onClick={requestClose} aria-label="Close">✕</button></div>
         <div className="dbody">
           <div style={{ marginBottom: 12 }}><Chip status={e.status} />{asOf ? <span className="hint"> as of {fmtDate(asOf + "T12:00:00")}</span> : null}</div>
           {canWrite ? (
@@ -1039,7 +1062,25 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
           </div>
         </div>
       </aside>
+      {confirmExit && <ConfirmExit what={`your update on “${task.title}”`} saving={busy} onSave={saveAndExit} onDiscard={onClose} onCancel={() => setConfirmExit(false)} />}
     </>
+  );
+}
+
+// A guard shown when the user clicks away with unsaved input.
+function ConfirmExit({ what, saving, onSave, onDiscard, onCancel }: { what: string; saving: boolean; onSave: () => void; onDiscard: () => void; onCancel: () => void; }) {
+  return (
+    <div className="confirmwrap" onClick={onCancel}>
+      <div className="confirmbox" role="alertdialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3>Unsaved changes</h3>
+        <p>You have unsaved changes to {what}. Do you want to save before leaving?</p>
+        <div className="confirm-actions">
+          <button className="btn ghost sm" onClick={onDiscard}>Discard</button>
+          <button className="btn sm" onClick={onCancel}>Keep editing</button>
+          <button className="btn primary sm" onClick={onSave} disabled={saving}>{saving ? "Saving…" : "Save update"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
