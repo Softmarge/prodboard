@@ -63,6 +63,13 @@ select,input,textarea{font-family:inherit;font-size:inherit;color:var(--fg)}
 .tab:hover{color:var(--fg);background:var(--surface-2)}
 .tab[aria-selected="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 .tab .cnt{opacity:.75;font-size:11px;margin-left:5px}
+.groupbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grouppanel{display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex:1;min-width:0;padding-left:10px;border-left:1px solid var(--border)}
+.grouppills{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.gpill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;border:1px solid var(--border-strong);background:var(--surface);color:var(--muted);font-weight:500;font-size:13px}
+.gpill:hover{color:var(--fg);background:var(--surface-2)}
+.gpill.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.gpill .gcount{font-size:11px;opacity:.75;font-variant-numeric:tabular-nums}
 .filterrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .filterrow select,.filterrow input[type="search"]{padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);min-width:0}
 .filterrow input[type="search"]{flex:1;min-width:130px}

@@ -6,6 +6,7 @@ import {
   BSORTS,
   EDIT_STATUSES,
   EffKey,
+  Group,
   Member,
   ORDER,
   PTYPES,
@@ -102,6 +103,14 @@ export default function Dashboard({ me }: { me: Me }) {
   const [importOpen, setImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
+  // Product groups: Main (all) vs a selected personal group. The selection is
+  // remembered server-side so it reopens on next login.
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [groupMode, setGroupMode] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [groupsModalOpen, setGroupsModalOpen] = useState(false);
+  const groupInit = useRef(false);
+
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
   const flash = useCallback((m: string) => {
     setToast(m); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(""), 2200);
@@ -120,7 +129,13 @@ export default function Dashboard({ me }: { me: Me }) {
   const loadAll = useCallback(async () => {
     const d = await api("/api/bootstrap");
     setProducts(d.products); setTasks(d.tasks); setActivity(d.activity); setTeams(d.teams);
+    setGroups(d.groups || []);
     if (d.organization) setOrgName(d.organization.name);
+    // Initialize the Main/Groups selection once, from the remembered choice.
+    if (!groupInit.current) {
+      groupInit.current = true;
+      if (d.activeGroupId) { setSelectedGroupId(d.activeGroupId); setGroupMode(true); }
+    }
   }, []);
   // Reload through the scoped bootstrap so a PM never pulls data outside scope.
   const reloadWork = loadAll;
@@ -133,16 +148,44 @@ export default function Dashboard({ me }: { me: Me }) {
   }, [loadAll, flash]);
 
   const productById = useMemo(() => { const m: Record<string, Product> = {}; products.forEach((p) => (m[p.id] = p)); return m; }, [products]);
-  const people = useMemo(() => { const s = new Set<string>(); tasks.forEach((t) => t.owner && s.add(t.owner)); products.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [tasks, products]);
-  const srList = useMemo(() => { const s = new Set<string>(); tasks.forEach((t) => t.serviceRequest && s.add(t.serviceRequest)); return Array.from(s).sort(); }, [tasks]);
-  const pmList = useMemo(() => { const s = new Set<string>(); products.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [products]);
-  const myProducts = useMemo(() => products.filter((p) => (p.pm || "").trim().toLowerCase() === me.name.trim().toLowerCase()), [products, me.name]);
+
+  // Active group drives a product-set lens over every task view. Null = Main.
+  const activeGroup = useMemo(() => (groupMode && selectedGroupId ? groups.find((g) => g.id === selectedGroupId) || null : null), [groupMode, selectedGroupId, groups]);
+  const groupProductIds = useMemo(() => (activeGroup ? new Set(activeGroup.productIds) : null), [activeGroup]);
+  const inGroup = useCallback((pid: string | null) => !groupProductIds || (!!pid && groupProductIds.has(pid)), [groupProductIds]);
+  const scopedProducts = useMemo(() => (groupProductIds ? products.filter((p) => groupProductIds.has(p.id)) : products), [products, groupProductIds]);
+  const scopedTasks = useMemo(() => (groupProductIds ? tasks.filter((t) => inGroup(t.productId)) : tasks), [tasks, groupProductIds, inGroup]);
+  const scopedActivity = useMemo(() => {
+    if (!groupProductIds) return activity;
+    const ids = new Set(scopedTasks.map((t) => t.id));
+    return activity.filter((a) => a.taskId && ids.has(a.taskId));
+  }, [activity, groupProductIds, scopedTasks]);
+
+  // If the selected group vanished (deleted, or not ours), fall back to Main.
+  useEffect(() => {
+    if (selectedGroupId && !groups.some((g) => g.id === selectedGroupId)) { setSelectedGroupId(null); setGroupMode(false); }
+  }, [groups, selectedGroupId]);
+
+  const persistActive = useCallback((id: string | null) => { api("/api/me/active-group", { method: "PATCH", body: JSON.stringify({ groupId: id }) }).catch(() => {}); }, []);
+  const clearProductFilter = () => setFilters((f) => ({ ...f, product: "" }));
+  function selectMain() { setGroupMode(false); clearProductFilter(); persistActive(null); }
+  function selectGroups() {
+    const id = selectedGroupId || groups[0]?.id || null;
+    if (!id) { setGroupMode(true); setGroupsModalOpen(true); return; }
+    setGroupMode(true); setSelectedGroupId(id); clearProductFilter(); persistActive(id);
+  }
+  function pickGroup(id: string) { setGroupMode(true); setSelectedGroupId(id); clearProductFilter(); persistActive(id); }
+  function activateGroup(id: string) { setGroupMode(true); setSelectedGroupId(id); clearProductFilter(); persistActive(id); }
+  const people = useMemo(() => { const s = new Set<string>(); scopedTasks.forEach((t) => t.owner && s.add(t.owner)); scopedProducts.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [scopedTasks, scopedProducts]);
+  const srList = useMemo(() => { const s = new Set<string>(); scopedTasks.forEach((t) => t.serviceRequest && s.add(t.serviceRequest)); return Array.from(s).sort(); }, [scopedTasks]);
+  const pmList = useMemo(() => { const s = new Set<string>(); scopedProducts.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [scopedProducts]);
+  const myProducts = useMemo(() => scopedProducts.filter((p) => (p.pm || "").trim().toLowerCase() === me.name.trim().toLowerCase()), [scopedProducts, me.name]);
   const teamOptions = useMemo(() => { const s = new Set<string>(); teams.forEach((t) => s.add(t)); tasks.forEach((t) => t.team && s.add(t.team)); return Array.from(s); }, [teams, tasks]);
 
   const dispName = useCallback((id: string | null) => productDisplay(id ? productById[id] : null), [productById]);
 
   const visible = useMemo(() => {
-    let arr = tasks;
+    let arr = scopedTasks;
     if (asOf) arr = arr.filter((t) => existsAsOf(t, asOf));
     return arr.filter((t) => {
       if (filters.team && t.team !== filters.team) return false;
@@ -157,7 +200,7 @@ export default function Dashboard({ me }: { me: Me }) {
       }
       return true;
     });
-  }, [tasks, filters, asOf, activity, dispName]);
+  }, [scopedTasks, filters, asOf, activity, dispName]);
 
   const cmpTasks = useCallback((a: Task, b: Task) => {
     switch (boardSort) {
@@ -201,7 +244,7 @@ export default function Dashboard({ me }: { me: Me }) {
   }
   function exportReport() {
     const fromT = new Date(range.from + "T00:00:00").getTime(); const toT = new Date(range.to + "T23:59:59.999").getTime();
-    const moved = activity.filter((a) => { const ts = new Date(a.ts).getTime(); return ts >= fromT && ts <= toT && a.type !== "product"; }).sort((a, b) => +new Date(a.ts) - +new Date(b.ts));
+    const moved = scopedActivity.filter((a) => { const ts = new Date(a.ts).getTime(); return ts >= fromT && ts <= toT && a.type !== "product"; }).sort((a, b) => +new Date(a.ts) - +new Date(b.ts));
     const header: unknown[][] = [["Weekly delivery report"], ["Period", `${fmtDate(range.from + "T12:00:00")} to ${fmtDate(range.to + "T12:00:00")}`], ["Generated", new Date().toLocaleString()], []];
     const rows: unknown[][] = [["Service request", "Product", "Task", "Event", "By", "When", "Resulting status"]];
     moved.forEach((a) => { const t = tasks.find((x) => x.id === a.taskId); rows.push([t?.serviceRequest || "General / no request", dispName(t?.productId ?? null), t?.title || a.taskTitle || "", eventText(a), a.author || "", fmtTs(a.ts), a.toStatus ? statusMeta(a.toStatus).label : ""]); });
@@ -234,15 +277,40 @@ export default function Dashboard({ me }: { me: Me }) {
             <button key={v} className="tab" role="tab" aria-selected={view === v} onClick={() => { setView(v); setProductBoardId(null); }}>
               {label}
               {v === "board" && !loading ? <span className="cnt">({visible.length})</span> : null}
-              {v === "activity" && activity.length ? <span className="cnt">({activity.length})</span> : null}
+              {v === "activity" && scopedActivity.length ? <span className="cnt">({scopedActivity.length})</span> : null}
             </button>
           ))}
         </div>
+
+        <div className="groupbar">
+          <div className="segmented sm">
+            <button aria-pressed={!groupMode} onClick={selectMain}>Main</button>
+            <button aria-pressed={groupMode} onClick={selectGroups}>Groups</button>
+          </div>
+          {groupMode && (
+            <div className="grouppanel">
+              {groups.length === 0 ? (
+                <span className="hint">No groups yet. Create one to view a set of products together.</span>
+              ) : (
+                <div className="grouppills">
+                  {groups.map((g) => (
+                    <button key={g.id} className={`gpill${selectedGroupId === g.id ? " on" : ""}`} onClick={() => pickGroup(g.id)} title={`${g.productIds.length} product${g.productIds.length === 1 ? "" : "s"}`}>
+                      {g.name}<span className="gcount">{g.productIds.length}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <span className="grow" />
+              <button className="btn ghost sm" onClick={() => setGroupsModalOpen(true)}>Manage groups</button>
+            </div>
+          )}
+        </div>
+
         {view !== "activity" && view !== "products" && view !== "myproducts" && (
           <div className="filterrow">
             <input type="search" placeholder="Search tasks…" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} />
             <select value={filters.team} onChange={(e) => setFilters({ ...filters, team: e.target.value })} aria-label="Team"><option value="">All teams</option>{teamOptions.map((t) => <option key={t} value={t}>{t}</option>)}</select>
-            <select value={filters.product} onChange={(e) => setFilters({ ...filters, product: e.target.value })} aria-label="Product"><option value="">All products</option>{[...products].sort((a, b) => productOption(a).localeCompare(productOption(b))).map((p) => <option key={p.id} value={p.id}>{productOption(p)}</option>)}</select>
+            <select value={filters.product} onChange={(e) => setFilters({ ...filters, product: e.target.value })} aria-label="Product"><option value="">{activeGroup ? "All in group" : "All products"}</option>{[...scopedProducts].sort((a, b) => productOption(a).localeCompare(productOption(b))).map((p) => <option key={p.id} value={p.id}>{productOption(p)}</option>)}</select>
             <select value={filters.owner} onChange={(e) => setFilters({ ...filters, owner: e.target.value })} aria-label="Owner"><option value="">All owners</option>{people.map((o) => <option key={o} value={o}>{o}</option>)}</select>
             <select value={filters.sr} onChange={(e) => setFilters({ ...filters, sr: e.target.value })} aria-label="Service request"><option value="">All requests</option>{srList.map((s) => <option key={s} value={s}>{s}</option>)}</select>
             {!isPM && <select value={filters.pm} onChange={(e) => setFilters({ ...filters, pm: e.target.value })} aria-label="PM"><option value="">All PMs</option>{pmList.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
@@ -267,11 +335,11 @@ export default function Dashboard({ me }: { me: Me }) {
       <main>
         {loading ? <div className="empty"><h3>Loading…</h3></div>
           : productBoardId ? <ProductBoard product={productById[productBoardId]} tasks={tasks.filter((t) => t.productId === productBoardId)} asOf={asOf} activity={activity} pbView={pbView} setPbView={(v) => { setPbView(v); lsSet("pdt_pbview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onBack={() => setProductBoardId(null)} onOpenTask={setDrawerTaskId} onAdd={() => setTaskModal({ open: true, editing: null, preProduct: productBoardId })} onMove={moveStatus} />
-          : view === "board" ? <Board tasks={visible} allCount={tasks.length} asOf={asOf} activity={activity} boardView={boardView} setBoardView={(v) => { setBoardView(v); lsSet("pdt_bview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onOpenTask={setDrawerTaskId} onMove={moveStatus} />
-          : view === "products" || view === "myproducts" ? <ProductsView products={view === "myproducts" ? myProducts : products} tasks={tasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} isAdmin={isAdmin} onCreate={() => setProdCreateOpen(true)} onImport={() => setImportOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
+          : view === "board" ? <Board tasks={visible} allCount={scopedTasks.length} asOf={asOf} activity={activity} boardView={boardView} setBoardView={(v) => { setBoardView(v); lsSet("pdt_bview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onOpenTask={setDrawerTaskId} onMove={moveStatus} />
+          : view === "products" || view === "myproducts" ? <ProductsView products={view === "myproducts" ? myProducts : scopedProducts} tasks={scopedTasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} isAdmin={isAdmin} onCreate={() => setProdCreateOpen(true)} onImport={() => setImportOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
           : view === "sheet" ? <Sheet tasks={visible} asOf={asOf} activity={activity} dispName={dispName} onOpenTask={setDrawerTaskId} />
-          : view === "report" ? <Report tasks={tasks} activity={activity} dispName={dispName} range={range} setRange={setRange} eventText={eventText} />
-          : <Feed activity={activity} tasks={tasks} />}
+          : view === "report" ? <Report tasks={scopedTasks} activity={scopedActivity} dispName={dispName} range={range} setRange={setRange} eventText={eventText} />
+          : <Feed activity={scopedActivity} tasks={scopedTasks} />}
       </main>
 
       {taskModal.open && (
@@ -315,6 +383,8 @@ export default function Dashboard({ me }: { me: Me }) {
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} flash={flash} />}
 
       {membersOpen && <MembersModal meId={me.id} onClose={() => setMembersOpen(false)} flash={flash} />}
+
+      {groupsModalOpen && <GroupsModal groups={groups} products={products} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
 
       {toast && <div className="toast">{toast}</div>}
     </>
@@ -1051,6 +1121,107 @@ function ImportModal({ onClose, onDone, flash }: { onClose: () => void; onDone: 
 }
 
 // ---------------- Invite ----------------
+// ---------------- Product groups ----------------
+function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }: { groups: Group[]; products: Product[]; onClose: () => void; onChanged: () => Promise<void> | void; onActivate: (id: string) => void; flash: (m: string) => void; }) {
+  const [mode, setMode] = useState<"list" | "edit">(groups.length ? "list" : "edit");
+  const [editing, setEditing] = useState<Group | null>(null);
+  const [name, setName] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const active = useMemo(() => products.filter((p) => !p.decommissioned), [products]);
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const base = [...active].sort((a, b) => a.name.localeCompare(b.name));
+    return q ? base.filter((p) => productOption(p).toLowerCase().includes(q)) : base;
+  }, [active, query]);
+
+  function startNew() { setEditing(null); setName(""); setPicked(new Set()); setQuery(""); setMode("edit"); }
+  function startEdit(g: Group) { setEditing(g); setName(g.name); setPicked(new Set(g.productIds)); setQuery(""); setMode("edit"); }
+  function toggle(id: string) { setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
+
+  async function save() {
+    const nm = name.trim();
+    if (!nm) { flash("Give the group a name."); return; }
+    if (picked.size === 0) { flash("Pick at least one product."); return; }
+    setBusy(true);
+    try {
+      if (editing) {
+        await api(`/api/groups/${editing.id}`, { method: "PATCH", body: JSON.stringify({ name: nm, productIds: Array.from(picked) }) });
+        flash("Group updated");
+      } else {
+        const d = await api("/api/groups", { method: "POST", body: JSON.stringify({ name: nm, productIds: Array.from(picked) }) });
+        if (d.group?.id) onActivate(d.group.id);
+        flash("Group created");
+      }
+      await onChanged();
+      setMode("list");
+    } catch (e) { flash((e as Error).message); } finally { setBusy(false); }
+  }
+  async function remove(g: Group) {
+    if (!confirm(`Delete the group “${g.name}”? This does not change any products or tasks.`)) return;
+    setBusy(true);
+    try { await api(`/api/groups/${g.id}`, { method: "DELETE" }); await onChanged(); flash("Group deleted"); } catch (e) { flash((e as Error).message); } finally { setBusy(false); }
+  }
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>{mode === "edit" ? (editing ? "Edit group" : "New group") : "Product groups"}</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          {mode === "list" ? (
+            <>
+              <p className="lead" style={{ marginBottom: 12 }}>Your groups are personal. Pick one from the Groups bar to view just those products across the board, sheet, report and export.</p>
+              {groups.length === 0 ? <div className="hint" style={{ marginBottom: 12 }}>You have no groups yet.</div> : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+                  {groups.map((g) => (
+                    <div className="prow" key={g.id}>
+                      <div className="prow-top">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600 }}>{g.name}</div>
+                          <div className="hint">{g.productIds.length} product{g.productIds.length === 1 ? "" : "s"}</div>
+                        </div>
+                        <button className="btn ghost sm" onClick={() => startEdit(g)}>Edit</button>
+                        <button className="btn ghost sm" onClick={() => remove(g)} disabled={busy}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button className="btn primary sm" onClick={startNew}>+ New group</button>
+            </>
+          ) : (
+            <>
+              <div className="field">
+                <label htmlFor="gname">Group name</label>
+                <input id="gname" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Tuesday Standup" autoFocus />
+              </div>
+              <div className="field">
+                <label>Products <span className="hint">({picked.size} selected)</span></label>
+                <input type="search" placeholder="Filter products…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ marginBottom: 8 }} />
+                <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
+                  {list.length === 0 ? <div className="hint" style={{ padding: 10 }}>No products match.</div> : list.map((p) => (
+                    <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
+                      <input type="checkbox" checked={picked.has(p.id)} onChange={() => toggle(p.id)} />
+                      <span style={{ flex: 1 }}>{p.name}{p.type ? <span className="hint"> · {p.type}</span> : null}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button className="btn ghost sm" onClick={() => (groups.length ? setMode("list") : onClose())} disabled={busy}>Cancel</button>
+                <button className="btn primary sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create group"}</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: string) => void; }) {
   const [role, setRole] = useState<"" | "PM" | "VIEWER">(""); // "" = let them choose
   const [firstName, setFirstName] = useState("");

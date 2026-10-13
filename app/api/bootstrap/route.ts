@@ -8,12 +8,16 @@ export const runtime = "nodejs";
 // A plain PM is scoped to the products they manage (product.pm matches their
 // name); Admin (Lead PM) and Viewer see the whole organization.
 export const GET = withAuth(async (user) => {
-  const [org, allProducts, allTasks, allActivity] = await Promise.all([
+  const [org, allProducts, allTasks, allActivity, groups, me] = await Promise.all([
     prisma.organization.findUnique({ where: { id: user.oid } }),
     prisma.product.findMany({ where: { organizationId: user.oid }, orderBy: { name: "asc" } }),
     prisma.task.findMany({ where: { organizationId: user.oid }, orderBy: { createdAt: "desc" } }),
     prisma.activity.findMany({ where: { organizationId: user.oid }, orderBy: { ts: "desc" }, take: 1000 }),
+    prisma.productGroup.findMany({ where: { userId: user.uid }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, productIds: true } }),
+    prisma.user.findUnique({ where: { id: user.uid }, select: { activeGroupId: true } }),
   ]);
+  // Only honor an active group that still exists for this user.
+  const activeGroupId = me?.activeGroupId && groups.some((g: any) => g.id === me.activeGroupId) ? me.activeGroupId : null;
 
   let products = allProducts;
   let tasks = allTasks;
@@ -42,5 +46,7 @@ export const GET = withAuth(async (user) => {
     tasks,
     activity,
     teams,
+    groups,
+    activeGroupId,
   });
 });

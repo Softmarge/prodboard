@@ -39,6 +39,7 @@ export type Activity = {
   ts: string;
 };
 export type Member = { id: string; name: string; email: string; role: Role; createdAt?: string };
+export type Group = { id: string; name: string; productIds: string[] };
 
 export const STATUS: Record<string, { label: string; cls: string; colorVar: string }> = {
   NOT_STARTED: { label: "Not started", cls: "ns", colorVar: "--s-notstarted" },

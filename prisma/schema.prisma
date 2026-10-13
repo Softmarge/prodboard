@@ -31,11 +31,29 @@ model Organization {
   inviteToken String?  @unique // shareable token; anyone with the link joins this org
   createdAt   DateTime @default(now())
 
-  users       User[]
-  products    Product[]
-  tasks       Task[]
-  activities  Activity[]
-  inviteLinks InviteLink[]
+  users         User[]
+  products      Product[]
+  tasks         Task[]
+  activities    Activity[]
+  inviteLinks   InviteLink[]
+  productGroups ProductGroup[]
+}
+
+// A personal, named set of products a user wants to view together (e.g. a
+// weekly standup). Everything scopes to the active group when one is selected.
+model ProductGroup {
+  id             String       @id @default(cuid())
+  name           String
+  productIds     String[] // member product ids (same organization)
+  userId         String // owner; groups are personal
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([organizationId])
 }
 
 model InviteLink {
@@ -60,12 +78,14 @@ model User {
   surname        String?
   passwordHash   String
   role           Role         @default(PM)
+  activeGroupId  String? // last selected product group; null = Main (all products)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
 
   resets      PasswordReset[]
   nameChanges PendingNameChange[]
+  groups      ProductGroup[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
