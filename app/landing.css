@@ -81,6 +81,15 @@ html[data-theme="dark"] .lp {
 .lp * { box-sizing: border-box; }
 .lp a { color: var(--accent); }
 .lp a:hover { color: var(--accent-strong); }
+/* Action links carry their own text color; override the generic link color
+   above (and its hover) with higher specificity so button labels stay legible. */
+.lp a.lp-brand, .lp a.lp-brand:hover { color: var(--fg); }
+.lp a.lp-link, .lp a.lp-link:hover { color: var(--fg); }
+.lp a.lp-btn-primary, .lp a.lp-btn-primary:hover { color: var(--accent-ink); }
+.lp a.lp-btn-ghost, .lp a.lp-btn-ghost:hover { color: var(--fg); }
+.lp a.lp-cta-primary, .lp a.lp-cta-primary:hover { color: var(--accent-strong); }
+html[data-theme="dark"] .lp a.lp-cta-primary, html[data-theme="dark"] .lp a.lp-cta-primary:hover { color: #062A25; }
+.lp a.lp-cta-ghost, .lp a.lp-cta-ghost:hover { color: #FFFFFF; }
 
 .lp-shell { max-width: 1200px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
 

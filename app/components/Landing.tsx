@@ -28,10 +28,10 @@ export default function Landing({ signedIn }: { signedIn: boolean }) {
     <div className="lp" id="top">
       <header className="lp-header">
         <nav className="lp-nav">
-          <a href="#top" className="lp-brand">
+          <Link href="/" className="lp-brand" aria-label="ProdBoard home">
             <span className="lp-mark">PB</span>
             <span className="lp-brandname">ProdBoard</span>
-          </a>
+          </Link>
           <div className="lp-navlinks">
             <a href="#features">Features</a>
             <a href="#product">Product</a>
@@ -245,7 +245,7 @@ export default function Landing({ signedIn }: { signedIn: boolean }) {
         <div className="lp-footer-inner">
           <div className="lp-footer-brand">
             <span className="lp-footer-mark">PB</span>
-            <span>ProdBoard by CeLD Innovation Limited</span>
+            <span>ProdBoard by <a href="https://www.linkedin.com/in/majestya/" target="_blank" rel="noopener noreferrer">Majesty</a></span>
           </div>
           <div className="lp-footer-links">
             <Link href="/login">Sign in</Link>
