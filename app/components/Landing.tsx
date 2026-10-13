@@ -57,7 +57,6 @@ export default function Landing({ signedIn }: { signedIn: boolean }) {
 
       <section className="lp-hero">
         <div className="lp-hero-copy">
-          <span className="lp-eyebrow-pill"><span className="lp-dot" />Product management, pinned in one place</span>
           <h1 className="lp-h1">Every product. Every task. One board.</h1>
           <p className="lp-sub">ProdBoard brings your products, tasks, owners and timelines onto a single board, so standups run on facts and nothing slips between teams.</p>
           <div className="lp-hero-actions">
