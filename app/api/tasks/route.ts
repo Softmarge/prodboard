@@ -28,7 +28,7 @@ const Create = z.object({
   priority: z.number().int().min(1).max(3).optional().default(2),
   status: z.enum(STATUSES).default("IN_PROGRESS"),
   startDate: z.string().optional(),
-  dueDate: z.string().min(1),
+  dueDate: z.string().optional(),
   serviceRequest: z.string().max(160).optional().default(""),
   blocker: z.string().max(400).optional().default(""),
 });
@@ -47,8 +47,12 @@ export const POST = withAuth(async (user, req) => {
   } catch {
     return error("A task needs a title, product, owner and due date.");
   }
+  const start = toDate(data.startDate);
   const due = toDate(data.dueDate);
-  if (!due) return error("The due date is required and must be valid.");
+  // Dates are optional only while the task is Not started; any active status needs both.
+  if (data.status !== "NOT_STARTED" && (!start || !due)) {
+    return error("A start date and due date are required unless the task is Not started.");
+  }
 
   // Make sure the product belongs to this org.
   const product = await prisma.product.findFirst({
@@ -65,7 +69,7 @@ export const POST = withAuth(async (user, req) => {
       owner: data.owner.trim(),
       priority: data.priority,
       status: data.status,
-      startDate: toDate(data.startDate) ?? new Date(),
+      startDate: start,
       dueDate: due,
       serviceRequest: data.serviceRequest?.trim() || null,
       blocker: data.blocker?.trim() || null,

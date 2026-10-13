@@ -21,7 +21,7 @@ export type Task = {
   priority?: number;
   status: StatusKey;
   startDate: string | null;
-  dueDate: string;
+  dueDate: string | null;
   serviceRequest: string | null;
   blocker: string | null;
   createdBy: string | null;

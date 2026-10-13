@@ -45,6 +45,15 @@ export const PATCH = withAuth(async (user, req, params) => {
     if (!product) return error("Pick a product in your organization.", 400);
   }
 
+  // Work out the task's state after this patch so we can enforce the date rule:
+  // a task that is not "Not started" must carry both a start date and a due date.
+  const nextStatus = data.status ?? existing.status;
+  const nextStart = data.startDate !== undefined ? toDate(data.startDate) : existing.startDate;
+  const nextDue = data.dueDate !== undefined ? toDate(data.dueDate) : existing.dueDate;
+  if (nextStatus !== "NOT_STARTED" && (!nextStart || !nextDue)) {
+    return error("Set a start date and due date before moving this task out of Not started.");
+  }
+
   const patch: Record<string, unknown> = {};
   if (data.title !== undefined) patch.title = data.title.trim();
   if (data.context !== undefined) patch.context = data.context.trim() || null;
@@ -54,11 +63,7 @@ export const PATCH = withAuth(async (user, req, params) => {
   if (data.priority !== undefined) patch.priority = data.priority;
   if (data.status !== undefined) patch.status = data.status;
   if (data.startDate !== undefined) patch.startDate = toDate(data.startDate);
-  if (data.dueDate !== undefined) {
-    const d = toDate(data.dueDate);
-    if (!d) return error("Due date must be valid.");
-    patch.dueDate = d;
-  }
+  if (data.dueDate !== undefined) patch.dueDate = toDate(data.dueDate);
   if (data.serviceRequest !== undefined) patch.serviceRequest = data.serviceRequest.trim() || null;
   if (data.blocker !== undefined) patch.blocker = data.blocker.trim() || null;
 

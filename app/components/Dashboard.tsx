@@ -95,7 +95,7 @@ export default function Dashboard({ me }: { me: Me }) {
   const [pbView, setPbView] = useState<BoardView>(() => ls("pdt_pbview", "kanban") as BoardView);
 
   const [toast, setToast] = useState("");
-  const [taskModal, setTaskModal] = useState<{ open: boolean; editing: Task | null; preProduct?: string | null }>({ open: false, editing: null });
+  const [taskModal, setTaskModal] = useState<{ open: boolean; editing: Task | null; preProduct?: string | null; preStatus?: StatusKey }>({ open: false, editing: null });
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
   const [prodCreateOpen, setProdCreateOpen] = useState(false);
   const [prodSettings, setProdSettings] = useState<string | null>(null);
@@ -218,6 +218,12 @@ export default function Dashboard({ me }: { me: Me }) {
 
   async function moveStatus(id: string, ns: StatusKey) {
     const t = tasks.find((x) => x.id === id); if (!t || t.status === ns || asOf) return;
+    // Moving out of Not started needs a start and due date: open the editor to fill them.
+    if (ns !== "NOT_STARTED" && (!t.startDate || !t.dueDate)) {
+      setTaskModal({ open: true, editing: t, preStatus: ns });
+      flash(`Set a start and due date to move this to ${statusMeta(ns).label}`);
+      return;
+    }
     setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, status: ns } : x))); // optimistic
     try { await api(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status: ns }) }); await reloadWork(); flash(`Moved to ${statusMeta(ns).label}`); }
     catch (e) { flash((e as Error).message); reloadWork(); }
@@ -344,7 +350,7 @@ export default function Dashboard({ me }: { me: Me }) {
       </main>
 
       {taskModal.open && (
-        <TaskModal editing={taskModal.editing} preProduct={taskModal.preProduct ?? null} products={products} teamOptions={teamOptions} people={people} srList={srList} tasks={tasks}
+        <TaskModal editing={taskModal.editing} preProduct={taskModal.preProduct ?? null} preStatus={taskModal.preStatus ?? null} products={products} teamOptions={teamOptions} people={people} srList={srList} tasks={tasks}
           onClose={() => setTaskModal({ open: false, editing: null })}
           onAddTeam={async (name) => { try { const r = await api("/api/teams", { method: "POST", body: JSON.stringify({ name }) }); setTeams(r.teams); return r.teams as string[]; } catch (e) { flash((e as Error).message); return teamOptions; } }}
           onSaved={async (msg) => { setTaskModal({ open: false, editing: null }); await reloadWork(); flash(msg); }} />
@@ -401,9 +407,11 @@ export default function Dashboard({ me }: { me: Me }) {
 // ---------------- Board ----------------
 // A task's timeline: start to due when a start date exists, otherwise just the due date.
 function timelineText(t: Task): string {
-  const due = fmtDate(t.dueDate);
+  if (!t.dueDate && !t.startDate) return "Not scheduled";
+  const due = t.dueDate ? fmtDate(t.dueDate) : "";
   const start = t.startDate ? fmtDate(t.startDate) : "";
-  return start && start !== due ? `${start} to ${due}` : due;
+  if (start && due) return start !== due ? `${start} to ${due}` : due;
+  return due || start;
 }
 function cardMeta(t: Task, dispName: (id: string | null) => string, overdue: boolean) {
   return (
@@ -789,8 +797,8 @@ function ProductDetail({ product, tasks, activity, asOf, canWrite, onClose, onOp
 }
 
 // ---------------- Task modal ----------------
-function TaskModal({ editing, preProduct, products, teamOptions, people, srList, tasks, onClose, onAddTeam, onSaved }: {
-  editing: Task | null; preProduct: string | null; products: Product[]; teamOptions: string[]; people: string[]; srList: string[]; tasks: Task[];
+function TaskModal({ editing, preProduct, preStatus, products, teamOptions, people, srList, tasks, onClose, onAddTeam, onSaved }: {
+  editing: Task | null; preProduct: string | null; preStatus: StatusKey | null; products: Product[]; teamOptions: string[]; people: string[]; srList: string[]; tasks: Task[];
   onClose: () => void; onAddTeam: (name: string) => Promise<string[]>; onSaved: (msg: string) => void;
 }) {
   const liveProducts = products.filter((p) => !p.decommissioned || (editing && editing.productId === p.id));
@@ -810,9 +818,9 @@ function TaskModal({ editing, preProduct, products, teamOptions, people, srList,
   const [showTeamAdd, setShowTeamAdd] = useState(false);
   const [teamNew, setTeamNew] = useState("");
   const [priority, setPriority] = useState(editing ? priorityOf(editing) : 2);
-  const [status, setStatus] = useState<StatusKey>(editing?.status || "IN_PROGRESS");
-  const [start, setStart] = useState(isoToYMD(editing?.startDate) || todayYMD());
-  const [due, setDue] = useState(isoToYMD(editing?.dueDate) || "");
+  const [status, setStatus] = useState<StatusKey>(preStatus || editing?.status || "IN_PROGRESS");
+  const [start, setStart] = useState(isoToYMD(editing?.startDate));
+  const [due, setDue] = useState(isoToYMD(editing?.dueDate));
   const [blocker, setBlocker] = useState(editing?.blocker || "");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -831,7 +839,7 @@ function TaskModal({ editing, preProduct, products, teamOptions, people, srList,
     if (!productId) return setErr("Pick a product.");
     if (!owner) return setErr("Pick or add an owner.");
     if (!team) return setErr("Pick a team / function.");
-    if (!due) return setErr("A due date is required. It drives the overdue logic.");
+    if (status !== "NOT_STARTED" && (!start || !due)) return setErr("A start date and due date are required unless the task is Not started.");
     setErr(""); setBusy(true);
     const body = { title, context, productId, owner, team, priority, status, startDate: start, dueDate: due, serviceRequest: sr, blocker };
     try {
@@ -881,9 +889,10 @@ function TaskModal({ editing, preProduct, products, teamOptions, people, srList,
             <div className="field"><label>Status</label><select value={status} onChange={(e) => setStatus(e.target.value as StatusKey)}>{EDIT_STATUSES.map((s) => <option key={s} value={s}>{statusMeta(s).label}</option>)}</select></div>
           </div>
           <div className="two">
-            <div className="field"><label>Start date</label><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-            <div className="field req"><label>Due date</label><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></div>
+            <div className={status !== "NOT_STARTED" ? "field req" : "field"}><label>Start date{status === "NOT_STARTED" ? <span className="hint"> (optional)</span> : null}</label><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
+            <div className={status !== "NOT_STARTED" ? "field req" : "field"}><label>Due date{status === "NOT_STARTED" ? <span className="hint"> (optional)</span> : null}</label><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></div>
           </div>
+          {status === "NOT_STARTED" ? <div className="hint" style={{ marginTop: -4 }}>Not started tasks can skip dates. You will be asked to set them when the task moves to In progress.</div> : null}
           <div className="field"><label>Blocker (optional)</label><input value={blocker} onChange={(e) => setBlocker(e.target.value)} placeholder="why it is stuck, if it is" /></div>
           {err && <div className="err">{err}</div>}
         </div>
@@ -949,7 +958,8 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
           </div>
           {canWrite && (
             <div className="addupd">
-              <div className="field"><label>Change status</label><select value={status} onChange={(e2) => setStatus(e2.target.value as StatusKey)}>{EDIT_STATUSES.map((s) => <option key={s} value={s}>{statusMeta(s).label}</option>)}</select></div>
+              <div className="field"><label>Change status</label><select value={status} onChange={(e2) => setStatus(e2.target.value as StatusKey)}>{EDIT_STATUSES.map((s) => <option key={s} value={s}>{statusMeta(s).label}</option>)}</select>
+                {status !== "NOT_STARTED" && (!task.startDate || !task.dueDate) ? <div className="hint" style={{ color: "var(--s-overdue)", marginTop: 4 }}>This task has no start or due date. Use “Edit details” to set them before moving it out of Not started.</div> : null}</div>
               <div className="field"><label>Progress note</label><textarea value={note} onChange={(e2) => setNote(e2.target.value)} placeholder="what moved; add evidence the task is alive" /></div>
               <div className="field"><label>Blocker (optional)</label><input value={blocker} onChange={(e2) => setBlocker(e2.target.value)} placeholder="leave blank if not blocked" /></div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button className="btn sm" onClick={() => onEdit(task)}>Edit details</button><button className="btn primary sm" onClick={post} disabled={busy}>{busy ? "Posting…" : "Post update"}</button></div>

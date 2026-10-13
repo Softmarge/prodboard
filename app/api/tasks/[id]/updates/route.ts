@@ -33,6 +33,11 @@ export const POST = withAuth(async (user, req, params) => {
     return error("Nothing to post, change the status, add a note, or edit the blocker.");
   }
 
+  // Moving a task out of Not started requires a start date and a due date.
+  if (statusChanged && data.status !== "NOT_STARTED" && (!task.startDate || !task.dueDate)) {
+    return error("Set a start date and due date first (use Edit details) before moving this task out of Not started.");
+  }
+
   const patch: Record<string, unknown> = {};
   if (statusChanged) patch.status = data.status;
   if (blockerChanged) patch.blocker = data.blocker!.trim() || null;

@@ -159,7 +159,7 @@ model Task {
   priority       Int          @default(2) // 1 = most important, 3 = least
   status         Status       @default(IN_PROGRESS)
   startDate      DateTime?
-  dueDate        DateTime
+  dueDate        DateTime? // optional while Not started; required once active
   serviceRequest String?
   blocker        String?
   createdBy      String?
