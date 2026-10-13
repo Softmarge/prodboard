@@ -151,6 +151,7 @@ model Product {
 model Task {
   id             String       @id @default(cuid())
   title          String
+  context        String? // optional intro/description for stakeholders
   productId      String?
   product        Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
   team           String

@@ -8,6 +8,7 @@ const STATUSES = ["NOT_STARTED", "IN_PROGRESS", "IN_REVIEW", "COMPLETE"] as cons
 
 const Patch = z.object({
   title: z.string().min(1).max(240).optional(),
+  context: z.string().max(4000).optional(),
   productId: z.string().optional(),
   team: z.string().min(1).max(80).optional(),
   owner: z.string().min(1).max(120).optional(),
@@ -46,6 +47,7 @@ export const PATCH = withAuth(async (user, req, params) => {
 
   const patch: Record<string, unknown> = {};
   if (data.title !== undefined) patch.title = data.title.trim();
+  if (data.context !== undefined) patch.context = data.context.trim() || null;
   if (data.productId !== undefined) patch.productId = data.productId;
   if (data.team !== undefined) patch.team = data.team.trim();
   if (data.owner !== undefined) patch.owner = data.owner.trim();

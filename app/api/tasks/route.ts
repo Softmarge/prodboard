@@ -21,6 +21,7 @@ export const GET = withAuth(async (user) => {
 
 const Create = z.object({
   title: z.string().min(1).max(240),
+  context: z.string().max(4000).optional().default(""),
   productId: z.string().min(1),
   team: z.string().min(1).max(80),
   owner: z.string().min(1).max(120),
@@ -58,6 +59,7 @@ export const POST = withAuth(async (user, req) => {
   const task = await prisma.task.create({
     data: {
       title: data.title.trim(),
+      context: data.context?.trim() || null,
       productId: product.id,
       team: data.team.trim(),
       owner: data.owner.trim(),

@@ -70,6 +70,10 @@ select,input,textarea{font-family:inherit;font-size:inherit;color:var(--fg)}
 .gpill:hover{color:var(--fg);background:var(--surface-2)}
 .gpill.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 .gpill .gcount{font-size:11px;opacity:.75;font-variant-numeric:tabular-nums}
+.gpick{display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);cursor:pointer}
+.gpick:hover{background:var(--surface-2)}
+.gpick.on{border-color:var(--accent);background:var(--accent-soft)}
+.gpick-name{font-weight:500;overflow-wrap:anywhere}
 .filterrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .filterrow select,.filterrow input[type="search"]{padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);min-width:0}
 .filterrow input[type="search"]{flex:1;min-width:130px}
@@ -196,7 +200,12 @@ table.sheet .due.late{color:var(--s-overdue);font-weight:600}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* ---- board views, products view, product board (ported from the board) ---- */
+.pbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .pbbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.ctxbox{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px}
+.ctxlabel{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px}
+.ctxbody{white-space:pre-wrap;line-height:1.45}
+.ctxpreview{color:var(--muted);font-size:12px;line-height:1.4;margin:4px 0 2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .pbtitle{font-size:14px;color:var(--muted)}
 .pbtitle b{color:var(--fg)}
 .segmented{display:inline-flex;border:1px solid var(--border-strong);border-radius:var(--radius-sm);overflow:hidden}

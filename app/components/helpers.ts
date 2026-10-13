@@ -14,6 +14,7 @@ export type Product = {
 export type Task = {
   id: string;
   title: string;
+  context?: string | null;
   productId: string | null;
   team: string;
   owner: string;

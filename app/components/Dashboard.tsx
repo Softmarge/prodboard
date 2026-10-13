@@ -235,10 +235,10 @@ export default function Dashboard({ me }: { me: Me }) {
     if (asOf) header.push([`VIEW FROM ${fmtDate(asOf + "T12:00:00")} (close of business). Historical, not live`]);
     header.push(["Exported", new Date().toLocaleString(), asOf ? `As of ${asOf}` : "Live"]);
     header.push([]);
-    const rows: unknown[][] = [["Task", "Product", "Task Owner", "Start date", "Due date", "Status", "Latest update", "Priority", "Team", "Service request", "Blocker", "Created by"]];
+    const rows: unknown[][] = [["Task", "Context", "Product", "Task Owner", "Start date", "Due date", "Status", "Latest update", "Priority", "Team", "Service request", "Blocker", "Created by"]];
     visible.slice().sort(cmpTasks).forEach((t) => {
       const e = effectiveStatus(t, asOf || null, activity); const lu = lastUpdateFor(t.id, activity);
-      rows.push([t.title, dispName(t.productId), t.owner, isoToYMD(t.startDate), isoToYMD(t.dueDate), statusMeta(e.status).label, lu ? fmtTs(lu.ts) : "", `Level ${priorityOf(t)}`, t.team, t.serviceRequest || "", t.blocker || "", t.createdBy || ""]);
+      rows.push([t.title, t.context || "", dispName(t.productId), t.owner, isoToYMD(t.startDate), isoToYMD(t.dueDate), statusMeta(e.status).label, lu ? fmtTs(lu.ts) : "", `Level ${priorityOf(t)}`, t.team, t.serviceRequest || "", t.blocker || "", t.createdBy || ""]);
     });
     downloadCSV(`prodboard${asOf ? "-asof-" + asOf : ""}.csv`, [...header, ...rows]);
   }
@@ -749,6 +749,7 @@ function ProductDetail({ product, tasks, activity, asOf, canWrite, onClose, onOp
               {list.map((t) => { const e = effectiveStatus(t, asOf || null, activity); return (
                 <button key={t.id} className="pdtask" style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})` }} onClick={() => onOpenTask(t.id)}>
                   <div className="pdtask-top"><span className="title">{t.title}</span><Chip status={e.status} /></div>
+                  {t.context ? <div className="ctxpreview">{t.context}</div> : null}
                   <div className="meta"><span className="who">{t.owner || "-"}</span><span>{t.team}</span><span className="tnum"><span style={{ opacity: 0.7 }}>Timeline:</span> {timelineText(t)}</span>{t.serviceRequest ? <span className="sr">{t.serviceRequest}</span> : null}</div>
                 </button>
               ); })}
@@ -772,6 +773,7 @@ function TaskModal({ editing, preProduct, products, teamOptions, people, srList,
   const [srExisting, setSrExisting] = useState(editing?.serviceRequest || srList[0] || "");
   const [srNew, setSrNew] = useState("");
   const [title, setTitle] = useState(editing?.title || "");
+  const [context, setContext] = useState(editing?.context || "");
   const [productId, setProductId] = useState(editing?.productId || preProduct || liveProducts[0]?.id || "");
   const [ownerSel, setOwnerSel] = useState(editing?.owner || "");
   const [ownerNew, setOwnerNew] = useState("");
@@ -804,7 +806,7 @@ function TaskModal({ editing, preProduct, products, teamOptions, people, srList,
     if (!team) return setErr("Pick a team / function.");
     if (!due) return setErr("A due date is required. It drives the overdue logic.");
     setErr(""); setBusy(true);
-    const body = { title, productId, owner, team, priority, status, startDate: start, dueDate: due, serviceRequest: sr, blocker };
+    const body = { title, context, productId, owner, team, priority, status, startDate: start, dueDate: due, serviceRequest: sr, blocker };
     try {
       if (editing) { await api(`/api/tasks/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) }); onSaved("Task updated"); }
       else { await api("/api/tasks", { method: "POST", body: JSON.stringify(body) }); onSaved("Task created"); }
@@ -829,6 +831,7 @@ function TaskModal({ editing, preProduct, products, teamOptions, people, srList,
             <div className="hint" style={{ marginTop: 4 }}>A request can have several tasks. Group them under the same request.</div>
           </div>
           <div className="field req"><label>Task (outcome)</label><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Ship USSD airtime purchase flow" /></div>
+          <div className="field"><label>Context (optional)</label><textarea value={context} onChange={(e) => setContext(e.target.value)} rows={3} placeholder="A short intro so stakeholders understand what this task is about and why it matters" /></div>
           <div className="field req"><label>Product</label><select value={productId} disabled={lockProduct} onChange={(e) => setProductId(e.target.value)}>{liveProducts.length ? [...liveProducts].sort((a, b) => productOption(a).localeCompare(productOption(b))).map((p) => <option key={p.id} value={p.id}>{productOption(p)}</option>) : <option value="">No products yet</option>}</select></div>
           <div className="two">
             <div className="field req"><label>Owner</label>
@@ -889,6 +892,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
         <div className="dhead"><h2>{task.title}</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
           <div style={{ marginBottom: 12 }}><Chip status={e.status} />{asOf ? <span className="hint"> as of {fmtDate(asOf + "T12:00:00")}</span> : null}</div>
+          {task.context ? <div className="ctxbox"><div className="ctxlabel">Context</div><div className="ctxbody">{task.context}</div></div> : null}
           <div className="kv">
             <span className="k">Product</span><span className="v">{dispName(task.productId)}</span>
             <span className="k">Team</span><span className="v">{task.team || "-"}</span>
@@ -1128,6 +1132,7 @@ function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }
   const [name, setName] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
+  const [pickView, setPickView] = useState<"list" | "grid">("list");
   const [busy, setBusy] = useState(false);
 
   const active = useMemo(() => products.filter((p) => !p.decommissioned), [products]);
@@ -1199,15 +1204,36 @@ function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }
                 <input id="gname" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Tuesday Standup" autoFocus />
               </div>
               <div className="field">
-                <label>Products <span className="hint">({picked.size} selected)</span></label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <label style={{ margin: 0 }}>Products <span className="hint">({picked.size} selected)</span></label>
+                  <span className="grow" />
+                  <div className="segmented sm">
+                    <button type="button" aria-pressed={pickView === "list"} onClick={() => setPickView("list")}>List</button>
+                    <button type="button" aria-pressed={pickView === "grid"} onClick={() => setPickView("grid")}>Grid</button>
+                  </div>
+                </div>
                 <input type="search" placeholder="Filter products…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ marginBottom: 8 }} />
-                <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
-                  {list.length === 0 ? <div className="hint" style={{ padding: 10 }}>No products match.</div> : list.map((p) => (
-                    <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
-                      <input type="checkbox" checked={picked.has(p.id)} onChange={() => toggle(p.id)} />
-                      <span style={{ flex: 1 }}>{p.name}{p.type ? <span className="hint"> · {p.type}</span> : null}</span>
-                    </label>
-                  ))}
+                <div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
+                  {list.length === 0 ? <div className="hint" style={{ padding: 10 }}>No products match.</div>
+                    : pickView === "list" ? list.map((p) => (
+                      <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: "1px solid var(--border)", cursor: "pointer" }}>
+                        <input type="checkbox" checked={picked.has(p.id)} onChange={() => toggle(p.id)} />
+                        <span style={{ flex: 1 }}>{p.name}{p.type ? <span className="hint"> · {p.type}</span> : null}</span>
+                      </label>
+                    ))
+                    : (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: 10 }}>
+                        {list.map((p) => {
+                          const on = picked.has(p.id);
+                          return (
+                            <label key={p.id} className={`gpick${on ? " on" : ""}`}>
+                              <input type="checkbox" checked={on} onChange={() => toggle(p.id)} />
+                              <span style={{ minWidth: 0 }}><span className="gpick-name">{p.name}</span>{p.type ? <span className="hint" style={{ display: "block" }}>{p.type}</span> : null}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
