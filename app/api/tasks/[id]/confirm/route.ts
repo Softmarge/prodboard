@@ -21,6 +21,10 @@ export const POST = withAuth(async (user, req, params) => {
     await tx.activity.create({ data: { type: "status", taskId: task.id, fromStatus: task.status, toStatus: "COMPLETE", author: user.name, organizationId: user.oid } });
     if (note) await tx.activity.create({ data: { type: "note", taskId: task.id, content: `Confirmed complete. ${note}`, author: user.name, organizationId: user.oid } });
   });
+  if (task.ownerUserId) {
+    const { notifyTask } = await import("@/lib/notify");
+    await notifyTask(user.oid, { taskId: task.id, type: "confirm", text: `${user.name} confirmed “${task.title}” as complete`, to: [task.ownerUserId], excludeUserId: user.uid });
+  }
   const updated = await prisma.task.findUnique({ where: { id: task.id } });
   return json({ task: updated });
 });

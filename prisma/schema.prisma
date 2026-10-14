@@ -93,9 +93,10 @@ model User {
 
   resets      PasswordReset[]
   nameChanges PendingNameChange[]
-  groups      ProductGroup[]
-  highlights  TaskHighlight[]
-  ownedTasks  Task[]              @relation("OwnedTasks")
+  groups        ProductGroup[]
+  highlights    TaskHighlight[]
+  ownedTasks    Task[]              @relation("OwnedTasks")
+  notifications Notification[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -187,6 +188,22 @@ model Task {
 
   @@index([organizationId])
   @@index([productId])
+}
+
+// An in-app notification for one recipient (owner-done, confirm, send-back, assigned).
+model Notification {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  type           String // owner_done | confirm | sendback | assigned
+  taskId         String?
+  text           String
+  read           Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
 }
 
 // A private, per-user highlight color on a task. Only the owner sees it.

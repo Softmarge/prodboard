@@ -44,7 +44,7 @@ function hlTint(color?: string): string | undefined {
   if (!color) return undefined;
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color + "2E" : color;
 }
-type MainView = "board" | "myproducts" | "mytasks" | "products" | "sheet" | "report" | "activity";
+type MainView = "board" | "myproducts" | "mytasks" | "products" | "sheet" | "report" | "activity" | "feedbacks";
 type BoardView = "kanban" | "list" | "grid";
 type Filters = { q: string; team: string; product: string; owner: string; sr: string; status: string; pm: string };
 const EMPTY_FILTERS: Filters = { q: "", team: "", product: "", owner: "", sr: "", status: "", pm: "" };
@@ -129,6 +129,11 @@ export default function Dashboard({ me }: { me: Me }) {
   const [claimable, setClaimable] = useState<{ id: string; title: string; owner: string; productId: string | null }[]>([]);
   const [claimOpen, setClaimOpen] = useState(false);
   const [myTaskView, setMyTaskView] = useState<"list" | "grid">(() => ls("pdt_mtview", "list") as "list" | "grid");
+
+  // Notifications.
+  const [notifs, setNotifs] = useState<{ id: string; type: string; taskId: string | null; text: string; read: boolean; createdAt: string }[]>([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
   const flash = useCallback((m: string) => {
@@ -218,6 +223,16 @@ export default function Dashboard({ me }: { me: Me }) {
   }, []);
   const onlineCount = presence.filter((m) => m.online).length;
   const lastActivity = activity[0] || null;
+
+  // Notifications: poll, mark read, open.
+  const loadNotifs = useCallback(async () => { try { const d = await api("/api/notifications"); setNotifs(d.items || []); setNotifUnread(d.unread || 0); } catch {} }, []);
+  useEffect(() => { loadNotifs(); const t = setInterval(loadNotifs, 30000); return () => clearInterval(t); }, [loadNotifs]);
+  async function markAllNotifs() { setNotifUnread(0); setNotifs((n) => n.map((x) => ({ ...x, read: true }))); try { await api("/api/notifications", { method: "POST", body: JSON.stringify({}) }); } catch {} }
+  function openNotif(n: { id: string; taskId: string | null; read: boolean }) {
+    if (!n.read) { setNotifs((cur) => cur.map((x) => (x.id === n.id ? { ...x, read: true } : x))); setNotifUnread((u) => Math.max(0, u - 1)); api("/api/notifications", { method: "POST", body: JSON.stringify({ id: n.id }) }).catch(() => {}); }
+    setNotifOpen(false);
+    if (n.taskId) setDrawerTaskId(n.taskId);
+  }
   const people = useMemo(() => { const s = new Set<string>(); scopedTasks.forEach((t) => t.owner && s.add(t.owner)); scopedProducts.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [scopedTasks, scopedProducts]);
   const srList = useMemo(() => { const s = new Set<string>(); scopedTasks.forEach((t) => t.serviceRequest && s.add(t.serviceRequest)); return Array.from(s).sort(); }, [scopedTasks]);
   const pmList = useMemo(() => { const s = new Set<string>(); scopedProducts.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [scopedProducts]);
@@ -241,6 +256,7 @@ export default function Dashboard({ me }: { me: Me }) {
     if (ownsTasks || claimable.length > 0) {
       base.splice(1, 0, ["mytasks", "My Tasks"]);
     }
+    if (isAdmin || isPM) base.push(["feedbacks", "Owner Feedbacks"]);
     return base;
   }, [isPM, isAdmin, ownsTasks, claimable.length]);
   const teamOptions = useMemo(() => { const s = new Set<string>(); teams.forEach((t) => s.add(t)); tasks.forEach((t) => t.team && s.add(t.team)); return Array.from(s); }, [teams, tasks]);
@@ -341,6 +357,10 @@ export default function Dashboard({ me }: { me: Me }) {
         <div className="spacer" />
         {lastActivity && <div className="lastupd" title={`${eventText(lastActivity)} by ${lastActivity.author}`}><span className="lu-k">Last update</span><span className="lu-v">{relTime(lastActivity.ts)}{lastActivity.author ? ` · ${lastActivity.author}` : ""}</span></div>}
         <button className="presencepill" onClick={() => setPresenceOpen((o) => !o)} title="Who is online" aria-label="Who is online"><span className="live-dot" />{onlineCount} online</button>
+        <button className="bellbtn" onClick={() => { setNotifOpen((o) => !o); }} title="Notifications" aria-label={`Notifications${notifUnread ? `, ${notifUnread} unread` : ""}`}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+          {notifUnread > 0 ? <span className="bellcount">{notifUnread > 9 ? "9+" : notifUnread}</span> : null}
+        </button>
         <div className="whoami"><button className="linklike" style={{ fontWeight: 600, color: "var(--fg)" }} title="Edit your name" onClick={() => setProfileOpen(true)}>{me.name}</button><span className="rolepill">{me.role === "ADMIN" ? "Lead PM" : me.role === "PM" ? "PM" : "Viewer"}</span></div>
         <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
         {isAdmin && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
@@ -383,7 +403,7 @@ export default function Dashboard({ me }: { me: Me }) {
           )}
         </div>
 
-        {view !== "activity" && view !== "products" && view !== "myproducts" && (
+        {view !== "activity" && view !== "products" && view !== "myproducts" && view !== "feedbacks" && (
           <div className="filterrow">
             <input type="search" placeholder="Search tasks…" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} />
             <select value={filters.team} onChange={(e) => setFilters({ ...filters, team: e.target.value })} aria-label="Team"><option value="">All teams</option>{teamOptions.map((t) => <option key={t} value={t}>{t}</option>)}</select>
@@ -416,6 +436,7 @@ export default function Dashboard({ me }: { me: Me }) {
           : view === "products" || view === "myproducts" ? <ProductsView products={view === "myproducts" ? myProducts : scopedProducts} tasks={scopedTasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} isAdmin={isAdmin} onCreate={() => setProdCreateOpen(true)} onImport={() => setImportOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
           : view === "mytasks" ? <MyTasksView tasks={visible.filter((t) => t.ownerUserId === me.id)} activity={activity} asOf={asOf} cmpTasks={cmpTasks} dispName={dispName} tview={myTaskView} setTview={(v) => { setMyTaskView(v); lsSet("pdt_mtview", v); }} onOpenTask={setDrawerTaskId} claimableCount={claimable.length} onClaim={() => setClaimOpen(true)} />
           : view === "sheet" ? <Sheet tasks={visible} asOf={asOf} activity={activity} dispName={dispName} onOpenTask={setDrawerTaskId} />
+          : view === "feedbacks" ? <FeedbacksView tasks={scopedTasks.filter((t) => t.ownerDoneAt)} activity={activity} dispName={dispName} onOpenTask={setDrawerTaskId} />
           : view === "report" ? <Report tasks={scopedTasks} activity={scopedActivity} dispName={dispName} range={range} setRange={setRange} eventText={eventText} />
           : <Feed activity={scopedActivity} tasks={scopedTasks} />}
       </main>
@@ -465,6 +486,8 @@ export default function Dashboard({ me }: { me: Me }) {
       {groupsModalOpen && <GroupsModal groups={groups} products={products} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
 
       {presenceOpen && <PresencePanel members={presence} meId={me.id} onClose={() => setPresenceOpen(false)} />}
+
+      {notifOpen && <NotificationPanel items={notifs} unread={notifUnread} onOpenItem={openNotif} onMarkAll={markAllNotifs} onClose={() => setNotifOpen(false)} />}
 
       {claimOpen && <ClaimModal productById={productById} onClose={() => setClaimOpen(false)} flash={flash} onClaimed={async () => { await reloadWork(); api("/api/me/claimable").then((c) => setClaimable(c.tasks || [])).catch(() => {}); }} />}
 
@@ -1669,6 +1692,44 @@ function PresencePanel({ members, meId, onClose }: { members: PresenceMember[]; 
         </div>
       </div>
     </>
+  );
+}
+
+function NotificationPanel({ items, unread, onOpenItem, onMarkAll, onClose }: { items: { id: string; type: string; taskId: string | null; text: string; read: boolean; createdAt: string }[]; unread: number; onOpenItem: (n: { id: string; taskId: string | null; read: boolean }) => void; onMarkAll: () => void; onClose: () => void; }) {
+  return (
+    <>
+      <div className="hlscrim" onClick={onClose} />
+      <div className="presencepanel" role="dialog" aria-label="Notifications">
+        <div className="pp-head"><b>Notifications</b><div style={{ display: "flex", alignItems: "center", gap: 8 }}>{unread > 0 ? <button className="linklike" onClick={onMarkAll}>Mark all read</button> : null}<button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div></div>
+        <div className="pp-body">
+          {!items.length ? <div className="hint" style={{ padding: "6px 2px" }}>No notifications yet.</div> : items.map((n) => (
+            <button key={n.id} className={`notif${n.read ? "" : " unread"}`} onClick={() => onOpenItem(n)}>
+              <div className="notif-text">{n.text}</div>
+              <div className="notif-time">{relTime(n.createdAt)}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------- Owner Feedbacks (PM) ----------------
+function FeedbacksView({ tasks, activity, dispName, onOpenTask }: { tasks: Task[]; activity: Activity[]; dispName: (id: string | null) => string; onOpenTask: (id: string) => void; }) {
+  const list = [...tasks].sort((a, b) => (b.ownerDoneAt || "").localeCompare(a.ownerDoneAt || ""));
+  return (
+    <div className="pdlist" style={{ marginTop: 4 }}>
+      {!list.length ? <div className="empty"><h3>Nothing awaiting confirmation</h3><p>When a task owner marks their work done, it appears here for you to confirm or send back.</p></div> : list.map((t) => {
+        const lu = lastUpdateFor(t.id, activity);
+        return (
+          <button key={t.id} className="pdtask" style={{ ["--sc" as string]: "var(--warn-fg)" }} onClick={() => onOpenTask(t.id)}>
+            <div className="pdtask-top"><span className="title">{t.title}</span><span className="awaitpill">Awaiting confirmation</span></div>
+            <div className="meta"><span className="who">{t.ownerDoneBy || t.owner || "-"}</span><span>{dispName(t.productId)}</span>{t.ownerDoneAt ? <span className="tnum">Done {relTime(t.ownerDoneAt)}</span> : null}</div>
+            {lu && lu.content ? <div className="ctxpreview">{lu.content}</div> : null}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
