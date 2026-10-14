@@ -81,7 +81,12 @@ model User {
   surname        String?
   passwordHash   String
   role           Role         @default(PM)
-  viewAll        Boolean      @default(false) // for TASK_OWNER/REVIEWER: also granted viewer (org read-only) access
+  // Additive capabilities a Lead PM can grant on top of the primary role, so a
+  // user can hold more than one role at once. ADMIN implies all of them.
+  viewAll        Boolean      @default(false) // also a Viewer (org read-only)
+  capPm          Boolean      @default(false) // also a PM (can manage products/tasks)
+  capOwner       Boolean      @default(false) // also a Task owner
+  capReviewer    Boolean      @default(false) // also a Reviewer
   activeGroupId  String? // last selected product group; null = Main (all products)
   lastSeenAt     DateTime? // updated by a heartbeat; drives online presence and last seen
   hlName1        String? // personal highlight preset 1 name

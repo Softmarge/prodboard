@@ -56,7 +56,7 @@ export type Activity = {
   author: string;
   ts: string;
 };
-export type Member = { id: string; name: string; email: string; role: Role; viewAll?: boolean; createdAt?: string };
+export type Member = { id: string; name: string; email: string; role: Role; viewAll?: boolean; capPm?: boolean; capOwner?: boolean; capReviewer?: boolean; createdAt?: string };
 export type Group = { id: string; name: string; productIds: string[] };
 
 export const STATUS: Record<string, { label: string; cls: string; colorVar: string }> = {

@@ -13,7 +13,11 @@ export type SessionUser = {
   role: Role;
   name: string;
   email: string;
-  viewAll?: boolean; // TASK_OWNER/REVIEWER additionally granted viewer access
+  // Additive capabilities granted on top of the primary role (ADMIN implies all).
+  viewAll?: boolean; // also a Viewer
+  capPm?: boolean; // also a PM (can manage)
+  capOwner?: boolean; // also a Task owner
+  capReviewer?: boolean; // also a Reviewer
 };
 
 function secret(): Uint8Array {
@@ -43,7 +47,7 @@ export async function createToken(user: SessionUser): Promise<string> {
 export async function readToken(token: string): Promise<SessionUser | null> {
   try {
     const { payload } = await jwtVerify(token, secret());
-    const { uid, oid, role, name, email, viewAll } = payload as Record<string, unknown>;
+    const { uid, oid, role, name, email, viewAll, capPm, capOwner, capReviewer } = payload as Record<string, unknown>;
     if (typeof uid !== "string" || typeof oid !== "string") return null;
     return {
       uid,
@@ -52,6 +56,9 @@ export async function readToken(token: string): Promise<SessionUser | null> {
       name: String(name ?? ""),
       email: String(email ?? ""),
       viewAll: viewAll === true,
+      capPm: capPm === true,
+      capOwner: capOwner === true,
+      capReviewer: capReviewer === true,
     };
   } catch {
     return null;

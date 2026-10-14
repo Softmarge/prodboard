@@ -9,7 +9,7 @@ export const GET = withAuth(async (user) => {
   const users = await prisma.user.findMany({
     where: { organizationId: user.oid },
     orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, email: true, role: true, viewAll: true, createdAt: true },
+    select: { id: true, name: true, email: true, role: true, viewAll: true, capPm: true, capOwner: true, capReviewer: true, createdAt: true },
   });
   return json({ users });
 });
@@ -18,6 +18,9 @@ const Patch = z.object({
   userId: z.string().min(1),
   role: z.enum(["ADMIN", "PM", "VIEWER", "TASK_OWNER", "REVIEWER"]).optional(),
   viewAll: z.boolean().optional(),
+  capPm: z.boolean().optional(),
+  capOwner: z.boolean().optional(),
+  capReviewer: z.boolean().optional(),
   name: z.string().min(1).max(120).optional(),
 });
 
@@ -45,25 +48,28 @@ export const PATCH = withAuth(async (user, req) => {
     if (admins <= 1) return error("You can't remove the only admin. Promote someone else first.", 400);
   }
 
-  // The viewer add-on only applies to task owners / reviewers. If the resulting
-  // role is anything else, force it off so it can't linger.
+  // Normalize the capability set against the resulting primary role: a capability
+  // that the primary role already is, or that an admin always has, is redundant.
   const resultingRole = data.role !== undefined ? data.role : target.role;
-  const ownerScopedRole = resultingRole === "TASK_OWNER" || resultingRole === "REVIEWER";
-  const viewAllPatch =
-    data.viewAll !== undefined
-      ? { viewAll: ownerScopedRole ? data.viewAll : false }
-      : data.role !== undefined && !ownerScopedRole
-        ? { viewAll: false }
-        : {};
+  const isAdminRole = resultingRole === "ADMIN";
+  const want = (key: "viewAll" | "capPm" | "capOwner" | "capReviewer", cur: boolean) =>
+    data[key] !== undefined ? data[key]! : cur;
+  const norm = {
+    viewAll: isAdminRole || resultingRole === "VIEWER" ? false : want("viewAll", target.viewAll),
+    capPm: isAdminRole || resultingRole === "PM" ? false : want("capPm", (target as any).capPm === true),
+    capOwner: isAdminRole || resultingRole === "TASK_OWNER" ? false : want("capOwner", (target as any).capOwner === true),
+    capReviewer: isAdminRole || resultingRole === "REVIEWER" ? false : want("capReviewer", (target as any).capReviewer === true),
+  };
+  const touchesCaps = data.role !== undefined || data.viewAll !== undefined || data.capPm !== undefined || data.capOwner !== undefined || data.capReviewer !== undefined;
 
   const updated = await prisma.user.update({
     where: { id: target.id },
     data: {
       ...(data.role !== undefined ? { role: data.role } : {}),
-      ...viewAllPatch,
+      ...(touchesCaps ? norm : {}),
       ...(data.name !== undefined ? { name: data.name.trim() } : {}),
     },
-    select: { id: true, name: true, email: true, role: true, viewAll: true },
+    select: { id: true, name: true, email: true, role: true, viewAll: true, capPm: true, capOwner: true, capReviewer: true },
   });
   return json({ user: updated });
 });

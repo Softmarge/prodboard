@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { withAuth, json, isOwnerScoped } from "@/lib/api";
+import { withAuth, json, canViewAll, canManageScoped } from "@/lib/api";
 import { TEAM_BASE, HL_PRESET_DEFAULTS } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -24,7 +24,9 @@ export const GET = withAuth(async (user) => {
   let tasks = allTasks;
   let activity = allActivity;
 
-  if (user.role === "PM") {
+  if (canViewAll(user)) {
+    // Whole organization: leave products/tasks/activity unfiltered.
+  } else if (canManageScoped(user)) {
     const mine = user.name.trim().toLowerCase();
     const myProductIds = new Set(
       allProducts.filter((p: any) => (p.pm || "").trim().toLowerCase() === mine).map((p: any) => p.id),
@@ -41,8 +43,8 @@ export const GET = withAuth(async (user) => {
     tasks = allTasks.filter((t: any) => (t.productId && myProductIds.has(t.productId)) || t.ownerUserId === user.uid || t.reviewerUserId === user.uid);
     const myTaskIds = new Set(tasks.map((t: any) => t.id));
     activity = allActivity.filter((a: any) => a.taskId && myTaskIds.has(a.taskId));
-  } else if (isOwnerScoped(user)) {
-    // Task owner / reviewer without the viewer add-on: only the tasks they own or
+  } else {
+    // Task owner / reviewer scoped to their own work: only the tasks they own or
     // review, plus the products those tasks belong to so names resolve.
     tasks = allTasks.filter((t: any) => t.ownerUserId === user.uid || t.reviewerUserId === user.uid);
     const myProductIds = new Set(tasks.filter((t: any) => t.productId).map((t: any) => t.productId));
@@ -65,7 +67,7 @@ export const GET = withAuth(async (user) => {
   ];
 
   return json({
-    me: { id: user.uid, name: user.name, email: user.email, role: user.role, viewAll: user.viewAll === true },
+    me: { id: user.uid, name: user.name, email: user.email, role: user.role, viewAll: user.viewAll === true, capPm: user.capPm === true, capOwner: user.capOwner === true, capReviewer: user.capReviewer === true },
     organization: org ? { id: org.id, name: org.name } : null,
     products,
     tasks,

@@ -29,6 +29,9 @@ export async function POST(req: Request) {
     name: user.name,
     email: user.email,
     viewAll: (user as any).viewAll === true,
+    capPm: (user as any).capPm === true,
+    capOwner: (user as any).capOwner === true,
+    capReviewer: (user as any).capReviewer === true,
   });
   return json({ ok: true, user: { id: user.id, name: user.name, role: user.role } });
 }

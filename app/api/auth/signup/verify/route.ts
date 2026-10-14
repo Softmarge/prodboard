@@ -97,6 +97,9 @@ export async function POST(req: Request) {
     name: result.user.name,
     email: result.user.email,
     viewAll: (result.user as any).viewAll === true,
+    capPm: (result.user as any).capPm === true,
+    capOwner: (result.user as any).capOwner === true,
+    capReviewer: (result.user as any).capReviewer === true,
   });
   return json({ ok: true });
 }

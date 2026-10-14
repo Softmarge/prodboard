@@ -32,7 +32,7 @@ import {
   todayYMD,
 } from "./helpers";
 
-type Me = { id: string; name: string; email: string; role: Role; viewAll?: boolean };
+type Me = { id: string; name: string; email: string; role: Role; viewAll?: boolean; capPm?: boolean; capOwner?: boolean; capReviewer?: boolean };
 type HlPreset = { name: string; color: string };
 type PresenceMember = { id: string; name: string; role: Role; lastSeenAt: string | null; online: boolean };
 
@@ -78,11 +78,23 @@ function PrBadge({ t }: { t: Task }) {
 export default function Dashboard({ me }: { me: Me }) {
   const router = useRouter();
   const isAdmin = me.role === "ADMIN";
-  const isPM = me.role === "PM";
-  const isOwnerRole = me.role === "TASK_OWNER" || me.role === "REVIEWER";
-  // Who can view the whole org read-only: viewers, and task owners / reviewers a
-  // Lead PM has additionally granted viewer access.
-  const hasViewerHat = me.role === "VIEWER" || (isOwnerRole && !!me.viewAll);
+  // A user can hold several roles at once: their primary role plus any capability
+  // flags a Lead PM granted. Each resolves to a "hat" they can act under.
+  const canManage = isAdmin || me.role === "PM" || !!me.capPm;
+  const canViewAllEff = isAdmin || me.role === "VIEWER" || !!me.viewAll;
+  const hasViewerHat = me.role === "VIEWER" || !!me.viewAll; // explicit org read-only (admin acts in PM mode)
+  const ownerCap = me.role === "TASK_OWNER" || !!me.capOwner;
+  const reviewerCap = me.role === "REVIEWER" || !!me.capReviewer;
+  const pmScoped = canManage && !isAdmin && !canViewAllEff; // a PM sees only their products
+  // All the roles this user holds, for the header pill.
+  const heldRoleLabels = isAdmin
+    ? ["Lead PM"]
+    : [roleLabel(me.role),
+        me.capPm && me.role !== "PM" ? "PM" : "",
+        me.viewAll && me.role !== "VIEWER" ? "Viewer" : "",
+        me.capOwner && me.role !== "TASK_OWNER" ? "Task owner" : "",
+        me.capReviewer && me.role !== "REVIEWER" ? "Reviewer" : "",
+      ].filter(Boolean);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -259,19 +271,18 @@ export default function Dashboard({ me }: { me: Me }) {
   const ownsTasks = myOwnedTasks.length > 0;
   const myReviewedTasks = useMemo(() => tasks.filter((t) => t.reviewerUserId === me.id), [tasks, me.id]);
   const reviewsTasks = myReviewedTasks.length > 0;
-  const isReviewerRole = me.role === "REVIEWER";
 
   // The hats this user holds. A user with more than one gets a mode switcher and
   // acts under one hat at a time (do owner work in Task Owner mode, confirm in PM
   // mode). Default order is the priority order below: PM, Task Owner, Reviewer, Viewer.
   const hats = useMemo<Mode[]>(() => {
     const h: Mode[] = [];
-    if (isAdmin || isPM) h.push("pm");
-    if (ownsTasks || claimable.length > 0 || (isOwnerRole && !isReviewerRole)) h.push("owner");
-    if (reviewsTasks || isReviewerRole) h.push("reviewer");
+    if (canManage) h.push("pm");
+    if (ownsTasks || claimable.length > 0 || ownerCap) h.push("owner");
+    if (reviewsTasks || reviewerCap) h.push("reviewer");
     if (hasViewerHat) h.push("viewer");
     return h.length ? h : ["viewer"];
-  }, [isAdmin, isPM, isOwnerRole, isReviewerRole, hasViewerHat, ownsTasks, reviewsTasks, claimable.length]);
+  }, [canManage, ownerCap, reviewerCap, hasViewerHat, ownsTasks, reviewsTasks, claimable.length]);
   // The active mode: the chosen one if the user still holds that hat, else the
   // strongest available. Derived so a remembered choice reappears once its hat loads.
   const mode: Mode = hats.includes(chosenMode) ? chosenMode : hats[0];
@@ -292,12 +303,12 @@ export default function Dashboard({ me }: { me: Me }) {
     if (mode === "reviewer") return [["myreviews", "My Reviews"]];
     if (mode === "viewer") return [["board", "Main Board"], ["products", "Products"], ["report", "Weekly report"], ["sheet", "Sheet"]];
     // pm mode
-    const base: [MainView, string][] = isPM
+    const base: [MainView, string][] = pmScoped
       ? [["board", "My Main Board"], ["myproducts", "My Products"], ["activity", "My Activity"]]
       : [["board", "Main Board"], ["myproducts", "My Products"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]];
     base.push(["feedbacks", "Owner Feedbacks"]);
     return base;
-  }, [mode, isPM]);
+  }, [mode, pmScoped]);
   // Keep the active tab valid when the mode (and so the tab set) changes.
   useEffect(() => {
     if (tabDefs.length && !tabDefs.some(([v]) => v === view)) setView(tabDefs[0][0]);
@@ -408,11 +419,14 @@ export default function Dashboard({ me }: { me: Me }) {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
           {notifUnread > 0 ? <span className="bellcount">{notifUnread > 9 ? "9+" : notifUnread}</span> : null}
         </button>
-        <div className="whoami"><button className="linklike" style={{ fontWeight: 600, color: "var(--fg)" }} title="Edit your name" onClick={() => setProfileOpen(true)}>{me.name}</button><span className="rolepill">{roleLabel(me.role)}{isOwnerRole && me.viewAll ? " + Viewer" : ""}</span></div>
+        <div className="whoami"><button className="linklike" style={{ fontWeight: 600, color: "var(--fg)" }} title="Edit your name" onClick={() => setProfileOpen(true)}>{me.name}</button><span className="rolepill">{heldRoleLabels.join(" + ")}</span></div>
         {hats.length > 1 && (
-          <div className="segmented sm modeswitch" role="tablist" aria-label="Mode" title="Switch which hat you are acting under">
-            {hats.map((h) => <button key={h} role="tab" aria-selected={mode === h} aria-pressed={mode === h} onClick={() => pickMode(h)}>{MODE_LABEL[h]}</button>)}
-          </div>
+          <label className="modepick" title="Switch which hat you are acting under">
+            <span className="modepick-k">Mode:</span>
+            <select value={mode} onChange={(e) => pickMode(e.target.value as Mode)} aria-label="Mode">
+              {hats.map((h) => <option key={h} value={h}>{MODE_LABEL[h]}</option>)}
+            </select>
+          </label>
         )}
         <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
         {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
@@ -462,7 +476,7 @@ export default function Dashboard({ me }: { me: Me }) {
             <select value={filters.product} onChange={(e) => setFilters({ ...filters, product: e.target.value })} aria-label="Product"><option value="">{activeGroup ? "All in group" : "All products"}</option>{[...scopedProducts].sort((a, b) => productOption(a).localeCompare(productOption(b))).map((p) => <option key={p.id} value={p.id}>{productOption(p)}</option>)}</select>
             <select value={filters.owner} onChange={(e) => setFilters({ ...filters, owner: e.target.value })} aria-label="Owner"><option value="">All owners</option>{people.map((o) => <option key={o} value={o}>{o}</option>)}</select>
             <select value={filters.sr} onChange={(e) => setFilters({ ...filters, sr: e.target.value })} aria-label="Service request"><option value="">All requests</option>{srList.map((s) => <option key={s} value={s}>{s}</option>)}</select>
-            {!isPM && <select value={filters.pm} onChange={(e) => setFilters({ ...filters, pm: e.target.value })} aria-label="PM"><option value="">All PMs</option>{pmList.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
+            {!pmScoped && <select value={filters.pm} onChange={(e) => setFilters({ ...filters, pm: e.target.value })} aria-label="PM"><option value="">All PMs</option>{pmList.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
             <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} aria-label="Status"><option value="">All statuses</option><option value="NOT_STARTED">Not started</option><option value="IN_PROGRESS">In progress</option><option value="BLOCKED">Blocked</option><option value="IN_REVIEW">In review</option><option value="COMPLETE">Complete</option><option value="OVERDUE">Overdue</option></select>
             <button className="btn ghost sm" onClick={() => setFilters(EMPTY_FILTERS)}>Clear</button>
             <span className="grow" />
@@ -1082,7 +1096,8 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
   const [productId, setProductId] = useState(editing?.productId || preProduct || liveProducts[0]?.id || "");
   const [ownerSel, setOwnerSel] = useState(editing?.owner || "");
   const [ownerNew, setOwnerNew] = useState("");
-  const [reviewer, setReviewer] = useState(editing?.reviewer || "");
+  const [reviewerSel, setReviewerSel] = useState(editing?.reviewer || "");
+  const [reviewerNew, setReviewerNew] = useState("");
   const [team, setTeam] = useState(editing?.team || teamOptions[0] || "");
   const [teamTouched, setTeamTouched] = useState(!!editing);
   const [teams, setTeams] = useState(teamOptions);
@@ -1106,6 +1121,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
   }
   async function save() {
     const owner = ownerSel === "__new__" ? ownerNew.trim() : ownerSel;
+    const reviewer = reviewerSel === "__new__" ? reviewerNew.trim() : reviewerSel;
     const sr = srMode === "existing" ? srExisting : srMode === "new" ? srNew.trim() : "";
     if (!title.trim()) return setErr("Give the task a title.");
     if (!productId) return setErr("Pick a product.");
@@ -1122,9 +1138,10 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
   }
 
   // Unsaved input guard: compare to the task being edited, or any typed content for a new task.
+  const reviewerVal = reviewerSel === "__new__" ? reviewerNew.trim() : reviewerSel;
   const dirty = editing
-    ? (title !== (editing.title || "") || context !== (editing.context || "") || blocker !== (editing.blocker || "") || isoToYMD(editing.startDate) !== start || isoToYMD(editing.dueDate) !== due || status !== editing.status || priority !== priorityOf(editing) || (ownerSel && ownerSel !== editing.owner) || ownerNew.trim() !== "" || reviewer !== (editing.reviewer || ""))
-    : (!!title.trim() || !!context.trim() || !!blocker.trim() || !!ownerNew.trim() || !!srNew.trim() || !!due || (!!ownerSel && ownerSel !== "__new__") || !!reviewer);
+    ? (title !== (editing.title || "") || context !== (editing.context || "") || blocker !== (editing.blocker || "") || isoToYMD(editing.startDate) !== start || isoToYMD(editing.dueDate) !== due || status !== editing.status || priority !== priorityOf(editing) || (ownerSel && ownerSel !== editing.owner) || ownerNew.trim() !== "" || reviewerVal !== (editing.reviewer || ""))
+    : (!!title.trim() || !!context.trim() || !!blocker.trim() || !!ownerNew.trim() || !!srNew.trim() || !!due || (!!ownerSel && ownerSel !== "__new__") || !!reviewerVal);
   function requestClose() { if (dirty && !busy) setConfirmExit(true); else onClose(); }
 
   return (
@@ -1173,12 +1190,19 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
             <div className="field"><label>Status</label><select value={status} onChange={(e) => setStatus(e.target.value as StatusKey)}>{EDIT_STATUSES.map((s) => <option key={s} value={s}>{statusMeta(s).label}</option>)}</select></div>
           </div>
           <div className="field"><label>Second reviewer <span className="hint">(optional)</span></label>
-            <select value={reviewer} onChange={(e) => setReviewer(e.target.value)}>
+            <select value={reviewerSel} onChange={(e) => setReviewerSel(e.target.value)}>
               <option value="">No reviewer</option>
-              {reviewer && !people.some((o) => o === reviewer) ? <option value={reviewer}>{reviewer}</option> : null}
-              {people.filter((o) => registered.has(o.trim().toLowerCase())).map((o) => <option key={o} value={o}>{o}</option>)}
+              {reviewerSel && reviewerSel !== "__new__" && !people.some((o) => o === reviewerSel) ? <option value={reviewerSel}>{reviewerSel}</option> : null}
+              {people.map((o) => { const reg = registered.has(o.trim().toLowerCase()); return <option key={o} value={o}>{reg ? `• ${o}` : o}</option>; })}
+              <option value="__new__">+ Add new reviewer</option>
             </select>
-            <div className="hint" style={{ marginTop: 4 }}>A reviewer sees this task in My Reviews, can post review notes, and is notified when it is ready for review. Only people on ProdBoard can be reviewers.</div>
+            {reviewerSel && reviewerSel !== "__new__" ? (
+              registered.has(reviewerSel.trim().toLowerCase())
+                ? <div className="ownerbadge on">On ProdBoard</div>
+                : <div className="ownerbadge off">Not on ProdBoard yet · invite them so they can review it</div>
+            ) : null}
+            {reviewerSel === "__new__" && <div style={{ marginTop: 6 }}><input value={reviewerNew} onChange={(e) => setReviewerNew(e.target.value)} placeholder="New reviewer name" /></div>}
+            <div className="hint" style={{ marginTop: 4 }}>A reviewer sees this task in My Reviews, can post review notes, and is notified when it is ready for review. Links to their account automatically once they are on ProdBoard.</div>
           </div>
           <div className="two">
             <div className={status !== "NOT_STARTED" ? "field req" : "field"}><label>Start date{status === "NOT_STARTED" ? <span className="hint"> (optional)</span> : null}</label><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
@@ -1958,12 +1982,42 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
 }
 
 // ---------------- Members ----------------
+const ROLE_CHECKS: [Role, string][] = [["ADMIN", "Admin"], ["PM", "PM"], ["VIEWER", "Viewer"], ["TASK_OWNER", "Task owner"], ["REVIEWER", "Reviewer"]];
+const ROLE_PRIORITY: Role[] = ["ADMIN", "PM", "VIEWER", "TASK_OWNER", "REVIEWER"];
+// The roles a member currently holds (primary role plus any granted capabilities).
+function rolesOf(m: Member): Set<Role> {
+  if (m.role === "ADMIN") return new Set<Role>(["ADMIN"]);
+  const s = new Set<Role>([m.role]);
+  if (m.viewAll) s.add("VIEWER");
+  if (m.capPm) s.add("PM");
+  if (m.capOwner) s.add("TASK_OWNER");
+  if (m.capReviewer) s.add("REVIEWER");
+  return s;
+}
+// Collapse a chosen role set into a primary role plus additive capability flags.
+function rolesPayload(set: Set<Role>) {
+  const pri = ROLE_PRIORITY.find((r) => set.has(r)) || "VIEWER";
+  return {
+    role: pri,
+    viewAll: set.has("VIEWER") && pri !== "VIEWER" && pri !== "ADMIN",
+    capPm: set.has("PM") && pri !== "PM" && pri !== "ADMIN",
+    capOwner: set.has("TASK_OWNER") && pri !== "TASK_OWNER" && pri !== "ADMIN",
+    capReviewer: set.has("REVIEWER") && pri !== "REVIEWER" && pri !== "ADMIN",
+  };
+}
+
 function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => void; flash: (m: string) => void; }) {
   const [members, setMembers] = useState<Member[]>([]); const [loading, setLoading] = useState(true);
   const load = useCallback(async () => { try { setMembers((await api("/api/users")).users); } catch (e) { flash((e as Error).message); } finally { setLoading(false); } }, [flash]);
   useEffect(() => { load(); }, [load]);
-  async function changeRole(id: string, role: Role) { try { await api("/api/users", { method: "PATCH", body: JSON.stringify({ userId: id, role }) }); await load(); flash("Role updated"); } catch (e) { flash((e as Error).message); } }
-  async function changeViewAll(id: string, viewAll: boolean) { try { await api("/api/users", { method: "PATCH", body: JSON.stringify({ userId: id, viewAll }) }); await load(); flash(viewAll ? "Viewer access granted" : "Viewer access removed"); } catch (e) { flash((e as Error).message); } }
+  async function toggleRole(m: Member, role: Role, checked: boolean) {
+    const next = rolesOf(m);
+    if (role === "ADMIN") { if (checked) { next.clear(); next.add("ADMIN"); } else next.delete("ADMIN"); }
+    else { if (checked) { next.add(role); next.delete("ADMIN"); } else next.delete(role); }
+    if (next.size === 0) { flash("A member needs at least one role."); return; }
+    try { await api("/api/users", { method: "PATCH", body: JSON.stringify({ userId: m.id, ...rolesPayload(next) }) }); await load(); flash("Roles updated"); }
+    catch (e) { flash((e as Error).message); await load(); }
+  }
   async function changeName(id: string, name: string, prev: string) {
     const n = name.trim();
     if (!n || n === prev) return;
@@ -1975,28 +2029,27 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
       <div className="modal" role="dialog" aria-modal="true">
         <div className="dhead"><h2>Members</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
-          <div className="hint" style={{ marginBottom: 10 }}>Admins manage everything. PMs create and update products and tasks. Viewers (e.g. the CTO) have read-only access. Task owners and reviewers see only their own work; tick “Also a viewer” to additionally give them read-only access to the whole organization. A member’s name must match the PM name on their products for scoping to work.</div>
+          <div className="hint" style={{ marginBottom: 10 }}>Tick every role a person should have; they can hold more than one and switch between them with the Mode selector. Admins manage everything. PMs create and update products and tasks. Viewers have read-only access to the whole organization. Task owners and reviewers see only their own work. A member’s name must match the PM name on their products for scoping to work.</div>
           {loading ? <div className="hint">Loading…</div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {members.map((m) => {
-                const ownerScopedRole = m.role === "TASK_OWNER" || m.role === "REVIEWER";
+                const have = rolesOf(m);
+                const adminOnly = m.role === "ADMIN";
                 return (
                 <div className="prow" key={m.id}>
-                  <div className="prow-top">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <input defaultValue={m.name} onBlur={(e) => changeName(m.id, e.target.value, m.name)} style={{ fontWeight: 600, width: "100%", padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface-2)" }} />
-                      <div className="hint">{m.email}{m.id === meId ? " · you" : ""}</div>
-                    </div>
-                    <select value={m.role} onChange={(e) => changeRole(m.id, e.target.value as Role)} style={{ padding: "6px 8px", border: "1px solid var(--border-strong)", borderRadius: 6, background: "var(--surface)" }}>
-                      <option value="ADMIN">Admin (Lead PM)</option><option value="PM">PM</option><option value="VIEWER">Viewer</option><option value="TASK_OWNER">Task owner</option><option value="REVIEWER">Reviewer</option>
-                    </select>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <input defaultValue={m.name} onBlur={(e) => changeName(m.id, e.target.value, m.name)} style={{ fontWeight: 600, width: "100%", padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface-2)" }} />
+                    <div className="hint">{m.email}{m.id === meId ? " · you" : ""}</div>
                   </div>
-                  {ownerScopedRole && (
-                    <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
-                      <input type="checkbox" checked={!!m.viewAll} onChange={(e) => changeViewAll(m.id, e.target.checked)} />
-                      Also a viewer (read-only access to the whole organization)
-                    </label>
-                  )}
+                  <div className="rolechecks">
+                    {ROLE_CHECKS.map(([r, label]) => (
+                      <label key={r} className={`rolechk${have.has(r) ? " on" : ""}`}>
+                        <input type="checkbox" checked={have.has(r)} onChange={(e) => toggleRole(m, r, e.target.checked)} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  {adminOnly && <div className="hint" style={{ marginTop: 4 }}>Admin has full access, so the other roles do not apply.</div>}
                 </div>
               ); })}
             </div>
