@@ -1043,7 +1043,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
               <select value={ownerExisting || ownerSel === "__new__" ? ownerSel : (ownerSel ? ownerSel : "")} onChange={(e) => setOwnerSel(e.target.value)}>
                 <option value="">Select owner</option>
                 {!ownerExisting && ownerSel && ownerSel !== "__new__" ? <option value={ownerSel}>{ownerSel}</option> : null}
-                {people.map((o) => { const reg = registered.has(o.trim().toLowerCase()); return <option key={o} value={o} style={reg ? { fontWeight: 600 } : undefined}>{o}</option>; })}
+                {people.map((o) => { const reg = registered.has(o.trim().toLowerCase()); return <option key={o} value={o}>{reg ? `• ${o}` : o}</option>; })}
                 <option value="__new__">+ Add new owner</option>
               </select>
               {ownerSel && ownerSel !== "__new__" ? (
