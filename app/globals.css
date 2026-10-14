@@ -228,6 +228,13 @@ table.sheet .due.late{color:var(--s-overdue);font-weight:600}
 .rolechk{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 9px;border:1px solid var(--border-strong);border-radius:999px;background:var(--surface);color:var(--muted);cursor:pointer}
 .rolechk.on{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
 .rolechk input{margin:0}
+.fa-stack{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.fa-card{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:12px 14px;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--surface-2)}
+.fa-main{min-width:0}
+.fa-title{display:flex;align-items:center;gap:8px;font-weight:600}
+.fa-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--accent-fg);background:var(--accent);padding:1px 7px;border-radius:999px}
+.fa-body{color:var(--muted);font-size:13px;margin-top:4px;white-space:pre-wrap}
+.fa-link{display:inline-block;margin-top:6px;font-size:13px;font-weight:600;color:var(--accent)}
 .chkline{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
 .chkline input{accent-color:var(--accent)}
 .viewmenu{position:relative}

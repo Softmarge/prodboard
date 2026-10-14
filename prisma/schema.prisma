@@ -40,6 +40,38 @@ model Organization {
   activities    Activity[]
   inviteLinks   InviteLink[]
   productGroups ProductGroup[]
+  featureAlerts FeatureAlert[]
+}
+
+// A targeted, dismissible in-app announcement for rolling out a feature to the
+// people it matters to (by role). Each recipient dismisses it for themselves.
+model FeatureAlert {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  title          String
+  body           String
+  linkUrl        String?
+  linkLabel      String?
+  audience       String[] // any of: all | pm | owner | reviewer | viewer
+  active         Boolean      @default(true)
+  createdBy      String?
+  createdAt      DateTime     @default(now())
+
+  dismissals FeatureAlertDismissal[]
+
+  @@index([organizationId])
+}
+
+model FeatureAlertDismissal {
+  id        String       @id @default(cuid())
+  alertId   String
+  alert     FeatureAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  userId    String
+  createdAt DateTime     @default(now())
+
+  @@unique([alertId, userId])
+  @@index([userId])
 }
 
 // A personal, named set of products a user wants to view together (e.g. a

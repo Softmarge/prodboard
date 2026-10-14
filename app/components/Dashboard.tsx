@@ -127,6 +127,8 @@ export default function Dashboard({ me }: { me: Me }) {
   const [prodCreateOpen, setProdCreateOpen] = useState(false);
   const [prodSettings, setProdSettings] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [alertsManageOpen, setAlertsManageOpen] = useState(false);
+  const [featureAlerts, setFeatureAlerts] = useState<{ id: string; title: string; body: string; linkUrl: string | null; linkLabel: string | null }[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -196,6 +198,13 @@ export default function Dashboard({ me }: { me: Me }) {
       try { await loadAll(); } catch (e) { flash((e as Error).message); } finally { setLoading(false); }
     })();
   }, [loadAll, flash]);
+
+  const loadFeatureAlerts = useCallback(async () => { try { const d = await api("/api/feature-alerts"); setFeatureAlerts(d.items || []); } catch {} }, []);
+  useEffect(() => { loadFeatureAlerts(); }, [loadFeatureAlerts]);
+  async function dismissFeatureAlert(id: string) {
+    setFeatureAlerts((cur) => cur.filter((a) => a.id !== id)); // optimistic
+    try { await api(`/api/feature-alerts/${id}/dismiss`, { method: "POST", body: JSON.stringify({}) }); } catch {}
+  }
 
   const productById = useMemo(() => { const m: Record<string, Product> = {}; products.forEach((p) => (m[p.id] = p)); return m; }, [products]);
 
@@ -430,6 +439,7 @@ export default function Dashboard({ me }: { me: Me }) {
         )}
         <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
         {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
+        {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setAlertsManageOpen(true)}>Alerts</button>}
         <button className="iconbtn" title="Toggle light / dark" onClick={toggleTheme} aria-label="Toggle theme">◐</button>
         <button className="btn ghost sm" onClick={logout}>Sign out</button>
       </div>
@@ -496,6 +506,20 @@ export default function Dashboard({ me }: { me: Me }) {
       )}
 
       <main>
+        {featureAlerts.length > 0 && (
+          <div className="fa-stack">
+            {featureAlerts.map((a) => (
+              <div className="fa-card" key={a.id}>
+                <div className="fa-main">
+                  <div className="fa-title"><span className="fa-tag">New</span>{a.title}</div>
+                  <div className="fa-body">{a.body}</div>
+                  {a.linkUrl ? <a className="fa-link" href={a.linkUrl} target="_blank" rel="noopener noreferrer">{a.linkLabel || "Learn more"}</a> : null}
+                </div>
+                <button className="btn sm" onClick={() => dismissFeatureAlert(a.id)}>Got it</button>
+              </div>
+            ))}
+          </div>
+        )}
         {loading ? <div className="empty"><h3>Loading…</h3></div>
           : productBoardId ? <ProductBoard product={productById[productBoardId]} tasks={tasks.filter((t) => t.productId === productBoardId)} asOf={asOf} activity={activity} pbView={pbView} setPbView={(v) => { setPbView(v); lsSet("pdt_pbview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onBack={() => setProductBoardId(null)} onOpenTask={setDrawerTaskId} onAdd={() => setTaskModal({ open: true, editing: null, preProduct: productBoardId })} onMove={moveStatus} onHlPresets={() => setHlPresetsOpen(true)} />
           : view === "board" ? <Board tasks={visible} allCount={scopedTasks.length} asOf={asOf} activity={activity} boardView={boardView} setBoardView={(v) => { setBoardView(v); lsSet("pdt_bview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onOpenTask={setDrawerTaskId} onMove={moveStatus} onHlPresets={() => setHlPresetsOpen(true)} />
@@ -559,6 +583,7 @@ export default function Dashboard({ me }: { me: Me }) {
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} flash={flash} />}
 
       {membersOpen && <MembersModal meId={me.id} onClose={() => setMembersOpen(false)} flash={flash} />}
+      {alertsManageOpen && <FeatureAlertsModal onClose={() => setAlertsManageOpen(false)} flash={flash} onChanged={loadFeatureAlerts} />}
 
       {groupsModalOpen && <GroupsModal groups={groups} products={products} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
 
@@ -2054,6 +2079,103 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
               ); })}
             </div>
           )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------- Feature alerts (admin) ----------------
+const ALERT_AUD: [string, string][] = [["all", "Everyone"], ["pm", "PMs"], ["owner", "Task owners"], ["reviewer", "Reviewers"], ["viewer", "Viewers"]];
+function audienceLabel(aud: string[]): string {
+  if (!aud || !aud.length || aud.includes("all")) return "Everyone";
+  return aud.map((a) => ALERT_AUD.find(([k]) => k === a)?.[1] || a).join(", ");
+}
+function FeatureAlertsModal({ onClose, flash, onChanged }: { onClose: () => void; flash: (m: string) => void; onChanged: () => void; }) {
+  type Row = { id: string; title: string; body: string; linkUrl: string | null; linkLabel: string | null; audience: string[]; active: boolean; dismissals: number; createdAt: string };
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkLabel, setLinkLabel] = useState("");
+  const [aud, setAud] = useState<Set<string>>(new Set(["all"]));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => { try { setRows((await api("/api/feature-alerts?manage=1")).alerts || []); } catch (e) { flash((e as Error).message); } finally { setLoading(false); } }, [flash]);
+  useEffect(() => { load(); }, [load]);
+
+  function toggleAud(k: string) {
+    setAud((cur) => {
+      const n = new Set(cur);
+      if (k === "all") return new Set(["all"]);
+      n.delete("all");
+      if (n.has(k)) n.delete(k); else n.add(k);
+      if (n.size === 0) n.add("all");
+      return n;
+    });
+  }
+  async function create() {
+    if (!title.trim() || !body.trim()) { setErr("Give the alert a title and a message."); return; }
+    if (linkUrl.trim() && !/^https?:\/\//i.test(linkUrl.trim())) { setErr("A link must start with http:// or https://."); return; }
+    setErr(""); setBusy(true);
+    try {
+      await api("/api/feature-alerts", { method: "POST", body: JSON.stringify({ title, body, linkUrl: linkUrl.trim() || undefined, linkLabel: linkLabel.trim() || undefined, audience: Array.from(aud) }) });
+      setTitle(""); setBody(""); setLinkUrl(""); setLinkLabel(""); setAud(new Set(["all"]));
+      await load(); onChanged(); flash("Feature alert posted");
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+  async function toggleActive(r: Row) { try { await api(`/api/feature-alerts/${r.id}`, { method: "PATCH", body: JSON.stringify({ active: !r.active }) }); await load(); onChanged(); } catch (e) { flash((e as Error).message); } }
+  async function remove(r: Row) { try { await api(`/api/feature-alerts/${r.id}`, { method: "DELETE" }); await load(); onChanged(); flash("Alert deleted"); } catch (e) { flash((e as Error).message); } }
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Feature alerts</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          <p className="lead" style={{ marginBottom: 12 }}>Announce a new feature to the people it matters to. Each person sees it until they dismiss it.</p>
+          <div className="field req"><label>Title</label><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Reviewers can now add notes" maxLength={160} /></div>
+          <div className="field req"><label>Message</label><textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="What changed and what to do with it" maxLength={2000} /></div>
+          <div className="two">
+            <div className="field"><label>Link <span className="hint">(optional)</span></label><input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="https://…" /></div>
+            <div className="field"><label>Link label <span className="hint">(optional)</span></label><input value={linkLabel} onChange={(e) => setLinkLabel(e.target.value)} placeholder="Learn more" /></div>
+          </div>
+          <div className="field"><label>Who should see it</label>
+            <div className="rolechecks">
+              {ALERT_AUD.map(([k, label]) => (
+                <label key={k} className={`rolechk${aud.has(k) ? " on" : ""}`}>
+                  <input type="checkbox" checked={aud.has(k)} onChange={() => toggleAud(k)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+          {err && <div className="err">{err}</div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}><button className="btn primary sm" onClick={create} disabled={busy}>{busy ? "Posting…" : "Post alert"}</button></div>
+
+          <div className="hist" style={{ marginTop: 18 }}>
+            <h3>Posted alerts ({rows.length})</h3>
+            {loading ? <div className="hint">Loading…</div> : !rows.length ? <div className="hint">No alerts yet.</div> : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+                {rows.map((r) => (
+                  <div className="prow" key={r.id}>
+                    <div className="prow-top">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{r.title}{!r.active ? <span className="hint"> · inactive</span> : null}</div>
+                        <div className="hint">{audienceLabel(r.audience)} · {r.dismissals} dismissed</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button className="btn sm" onClick={() => toggleActive(r)}>{r.active ? "Deactivate" : "Reactivate"}</button>
+                        <button className="btn ghost sm" onClick={() => remove(r)}>Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </>
