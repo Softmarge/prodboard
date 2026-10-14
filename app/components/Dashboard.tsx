@@ -46,6 +46,10 @@ function hlTint(color?: string): string | undefined {
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color + "2E" : color;
 }
 type MainView = "board" | "myproducts" | "mytasks" | "products" | "sheet" | "report" | "activity" | "feedbacks";
+// A multi-capability user acts under one "hat" at a time. The mode is a UI lens;
+// the server still authorizes by the user's real capability.
+type Mode = "pm" | "owner" | "viewer";
+const MODE_LABEL: Record<Mode, string> = { pm: "PM", owner: "Task Owner", viewer: "Viewer" };
 type BoardView = "kanban" | "list" | "grid";
 type Filters = { q: string; team: string; product: string; owner: string; sr: string; status: string; pm: string };
 const EMPTY_FILTERS: Filters = { q: "", team: "", product: "", owner: "", sr: "", status: "", pm: "" };
@@ -75,11 +79,10 @@ export default function Dashboard({ me }: { me: Me }) {
   const router = useRouter();
   const isAdmin = me.role === "ADMIN";
   const isPM = me.role === "PM";
-  const canWrite = isAdmin || isPM;
   const isOwnerRole = me.role === "TASK_OWNER" || me.role === "REVIEWER";
-  // Task owners / reviewers only see their own work unless a Lead PM also grants
-  // them viewer (org read-only) access.
-  const canViewAll = isAdmin || me.role === "VIEWER" || (isOwnerRole && !!me.viewAll);
+  // Who can view the whole org read-only: viewers, and task owners / reviewers a
+  // Lead PM has additionally granted viewer access.
+  const hasViewerHat = me.role === "VIEWER" || (isOwnerRole && !!me.viewAll);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -134,6 +137,7 @@ export default function Dashboard({ me }: { me: Me }) {
 
   // Owner persona: My Tasks + claim-your-tasks reconciliation.
   const [claimable, setClaimable] = useState<{ id: string; title: string; owner: string; productId: string | null }[]>([]);
+  const [chosenMode, setChosenMode] = useState<Mode>(() => (ls("pdt_mode", "") as Mode) || "pm");
   const [claimOpen, setClaimOpen] = useState(false);
   const [myTaskView, setMyTaskView] = useState<"list" | "grid">(() => ls("pdt_mtview", "list") as "list" | "grid");
 
@@ -253,23 +257,42 @@ export default function Dashboard({ me }: { me: Me }) {
   const myProducts = useMemo(() => scopedProducts.filter((p) => (p.pm || "").trim().toLowerCase() === me.name.trim().toLowerCase()), [scopedProducts, me.name]);
   const myOwnedTasks = useMemo(() => tasks.filter((t) => t.ownerUserId === me.id), [tasks, me.id]);
   const ownsTasks = myOwnedTasks.length > 0;
-  // Tabs depend on capability. A task owner / reviewer scoped to their own work
-  // gets only My Tasks; granting them viewer access opens the org-wide tabs.
+
+  // The hats this user holds. A user with more than one gets a mode switcher and
+  // acts under one hat at a time (do owner work in Task Owner mode, confirm in PM
+  // mode). Default order is the priority order below: PM, then Task Owner, then Viewer.
+  const hats = useMemo<Mode[]>(() => {
+    const h: Mode[] = [];
+    if (isAdmin || isPM) h.push("pm");
+    if (ownsTasks || claimable.length > 0 || isOwnerRole) h.push("owner");
+    if (hasViewerHat) h.push("viewer");
+    return h.length ? h : ["viewer"];
+  }, [isAdmin, isPM, isOwnerRole, hasViewerHat, ownsTasks, claimable.length]);
+  // The active mode: the chosen one if the user still holds that hat, else the
+  // strongest available. Derived so a remembered choice reappears once its hat loads.
+  const mode: Mode = hats.includes(chosenMode) ? chosenMode : hats[0];
+  // Effective capability under the current mode (the server still checks the real one).
+  const canWrite = mode === "pm";
+  const ownerActing = mode === "owner";
+  function pickMode(m: Mode) {
+    setChosenMode(m); lsSet("pdt_mode", m);
+    setProductBoardId(null);
+    setView(m === "owner" ? "mytasks" : "board");
+  }
+
+  // Tabs follow the active mode: PM mode shows the management tabs and Owner
+  // Feedbacks; Viewer mode the org-wide read-only tabs; Task Owner mode just My Tasks.
   const tabDefs = useMemo<[MainView, string][]>(() => {
-    let base: [MainView, string][];
-    if (isPM) base = [["board", "My Main Board"], ["myproducts", "My Products"], ["activity", "My Activity"]];
-    else if (isAdmin) base = [["board", "Main Board"], ["myproducts", "My Products"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]];
-    else if (canViewAll) base = [["board", "Main Board"], ["products", "Products"], ["report", "Weekly report"], ["sheet", "Sheet"]];
-    else base = [];
-    if (ownsTasks || claimable.length > 0 || isOwnerRole) {
-      if (base.length) base.splice(1, 0, ["mytasks", "My Tasks"]);
-      else base.push(["mytasks", "My Tasks"]);
-    }
-    if (isAdmin || isPM) base.push(["feedbacks", "Owner Feedbacks"]);
+    if (mode === "owner") return [["mytasks", "My Tasks"]];
+    if (mode === "viewer") return [["board", "Main Board"], ["products", "Products"], ["report", "Weekly report"], ["sheet", "Sheet"]];
+    // pm mode
+    const base: [MainView, string][] = isPM
+      ? [["board", "My Main Board"], ["myproducts", "My Products"], ["activity", "My Activity"]]
+      : [["board", "Main Board"], ["myproducts", "My Products"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]];
+    base.push(["feedbacks", "Owner Feedbacks"]);
     return base;
-  }, [isPM, isAdmin, canViewAll, isOwnerRole, ownsTasks, claimable.length]);
-  // Keep the active tab valid: a scoped owner has no Main Board, so fall back to
-  // whatever tab is first (My Tasks).
+  }, [mode, isPM]);
+  // Keep the active tab valid when the mode (and so the tab set) changes.
   useEffect(() => {
     if (tabDefs.length && !tabDefs.some(([v]) => v === view)) setView(tabDefs[0][0]);
   }, [tabDefs, view]);
@@ -380,8 +403,13 @@ export default function Dashboard({ me }: { me: Me }) {
           {notifUnread > 0 ? <span className="bellcount">{notifUnread > 9 ? "9+" : notifUnread}</span> : null}
         </button>
         <div className="whoami"><button className="linklike" style={{ fontWeight: 600, color: "var(--fg)" }} title="Edit your name" onClick={() => setProfileOpen(true)}>{me.name}</button><span className="rolepill">{roleLabel(me.role)}{isOwnerRole && me.viewAll ? " + Viewer" : ""}</span></div>
+        {hats.length > 1 && (
+          <div className="segmented sm modeswitch" role="tablist" aria-label="Mode" title="Switch which hat you are acting under">
+            {hats.map((h) => <button key={h} role="tab" aria-selected={mode === h} aria-pressed={mode === h} onClick={() => pickMode(h)}>{MODE_LABEL[h]}</button>)}
+          </div>
+        )}
         <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
-        {isAdmin && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
+        {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
         <button className="iconbtn" title="Toggle light / dark" onClick={toggleTheme} aria-label="Toggle theme">◐</button>
         <button className="btn ghost sm" onClick={logout}>Sign out</button>
       </div>
@@ -467,7 +495,7 @@ export default function Dashboard({ me }: { me: Me }) {
       )}
 
       {drawerTask && (
-        <TaskDrawer task={drawerTask} activity={activity} dispName={dispName} asOf={asOf} canWrite={canWrite} meId={me.id} members={presence}
+        <TaskDrawer task={drawerTask} activity={activity} dispName={dispName} asOf={asOf} canWrite={canWrite} ownerActing={ownerActing} meId={me.id} members={presence}
           onClose={() => setDrawerTaskId(null)}
           onEdit={(t) => { setDrawerTaskId(null); setTaskModal({ open: true, editing: t }); }}
           onPosted={async (msg) => { await reloadWork(); flash(msg); }} />
@@ -1130,7 +1158,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
 }
 
 // ---------------- Task drawer ----------------
-function TaskDrawer({ task, activity, dispName, asOf, canWrite, meId, members, onClose, onEdit, onPosted }: { task: Task; activity: Activity[]; dispName: (id: string | null) => string; asOf: string; canWrite: boolean; meId: string; members: PresenceMember[]; onClose: () => void; onEdit: (t: Task) => void; onPosted: (msg: string) => void; }) {
+function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, meId, members, onClose, onEdit, onPosted }: { task: Task; activity: Activity[]; dispName: (id: string | null) => string; asOf: string; canWrite: boolean; ownerActing: boolean; meId: string; members: PresenceMember[]; onClose: () => void; onEdit: (t: Task) => void; onPosted: (msg: string) => void; }) {
   const e = effectiveStatus(task, asOf || null, activity);
   const hist = activity.filter((a) => a.taskId === task.id).sort((a, b) => +new Date(b.ts) - +new Date(a.ts));
   const [status, setStatus] = useState<StatusKey>(task.status);
@@ -1269,7 +1297,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, meId, members, o
               {err && <div className="err">{err}</div>}
             </div>
           )}
-          {!canWrite && iAmOwner && (
+          {ownerActing && iAmOwner && (
             <div className="addupd">
               {awaiting ? <div className="hint" style={{ marginBottom: 8 }}>You marked this done. Awaiting PM confirmation.</div> : null}
               <div className="field"><label>Progress note</label><textarea value={ownerNote} onChange={(e2) => setOwnerNote(e2.target.value)} placeholder="what you did; evidence it is moving" rows={3} /></div>

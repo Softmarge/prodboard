@@ -221,6 +221,8 @@ table.sheet .due.late{color:var(--s-overdue);font-weight:600}
 .segmented{display:inline-flex;border:1px solid var(--border-strong);border-radius:var(--radius-sm);overflow:hidden}
 .segmented button{padding:5px 11px;background:var(--surface);border:0;color:var(--muted);font-size:12px}
 .segmented button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.modeswitch{border-color:var(--accent)}
+.modeswitch button{font-weight:600}
 .chkline{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
 .chkline input{accent-color:var(--accent)}
 .viewmenu{position:relative}
