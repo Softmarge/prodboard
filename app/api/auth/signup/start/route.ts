@@ -14,7 +14,7 @@ const Body = z.object({
   email: z.string().email().max(200),
   password: z.string().max(200),
   organization: z.string().min(1).max(120).optional(),
-  role: z.enum(["PM", "VIEWER"]).optional(),
+  role: z.enum(["PM", "VIEWER", "TASK_OWNER", "REVIEWER"]).optional(),
   inviteToken: z.string().min(1).optional(),
 });
 
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   // not ask for a code only to fail at the end. When joining by invite, the role
   // is pinned by the link (set by the admin), not by anything the client sends.
   let targetOrg = null;
-  let invitedRole: "PM" | "VIEWER" | null = null;
+  let invitedRole: "PM" | "VIEWER" | "TASK_OWNER" | "REVIEWER" | null = null;
   if (data.inviteToken) {
     const { resolveInvite, INVITE_USED_MESSAGE } = await import("@/lib/invite");
     const resolved = await resolveInvite(data.inviteToken);

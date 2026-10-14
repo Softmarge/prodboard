@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
 
-export type InviteRole = "PM" | "VIEWER";
+export type InviteRole = "PM" | "VIEWER" | "TASK_OWNER" | "REVIEWER";
 
 export function newInviteToken() {
   return crypto.randomBytes(18).toString("base64url");
@@ -26,7 +26,11 @@ export async function resolveInvite(token: string): Promise<ResolvedInvite | nul
     include: { organization: true },
   });
   if (link) {
-    const role: InviteRole | null = link.role === "VIEWER" ? "VIEWER" : link.role === "PM" ? "PM" : null;
+    // A link can pin any non-admin role; anything else means the invitee chooses.
+    const role: InviteRole | null =
+      link.role === "VIEWER" || link.role === "PM" || link.role === "TASK_OWNER" || link.role === "REVIEWER"
+        ? (link.role as InviteRole)
+        : null;
     const firstName = link.firstName || null;
     const surname = link.surname || null;
     return {

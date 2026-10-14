@@ -15,6 +15,8 @@ enum Role {
   ADMIN // Lead PM, full control of the organization
   PM    // Product Manager, create/manage products and tasks
   VIEWER // read-only (e.g. CTO, stakeholders)
+  TASK_OWNER // sees only the tasks they own; can update and mark them done
+  REVIEWER // sees only the tasks they review (reviewer workflow)
 }
 
 enum Status {
@@ -79,6 +81,7 @@ model User {
   surname        String?
   passwordHash   String
   role           Role         @default(PM)
+  viewAll        Boolean      @default(false) // for TASK_OWNER/REVIEWER: also granted viewer (org read-only) access
   activeGroupId  String? // last selected product group; null = Main (all products)
   lastSeenAt     DateTime? // updated by a heartbeat; drives online presence and last seen
   hlName1        String? // personal highlight preset 1 name

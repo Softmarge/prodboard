@@ -1,4 +1,16 @@
-export type Role = "ADMIN" | "PM" | "VIEWER";
+export type Role = "ADMIN" | "PM" | "VIEWER" | "TASK_OWNER" | "REVIEWER";
+
+// Short label for a role, as shown on pills and member rows.
+export function roleLabel(r: Role): string {
+  switch (r) {
+    case "ADMIN": return "Lead PM";
+    case "PM": return "PM";
+    case "VIEWER": return "Viewer";
+    case "TASK_OWNER": return "Task owner";
+    case "REVIEWER": return "Reviewer";
+    default: return r;
+  }
+}
 export type StatusKey = "NOT_STARTED" | "IN_PROGRESS" | "BLOCKED" | "IN_REVIEW" | "COMPLETE";
 export type EffKey = StatusKey | "OVERDUE";
 
@@ -42,7 +54,7 @@ export type Activity = {
   author: string;
   ts: string;
 };
-export type Member = { id: string; name: string; email: string; role: Role; createdAt?: string };
+export type Member = { id: string; name: string; email: string; role: Role; viewAll?: boolean; createdAt?: string };
 export type Group = { id: string; name: string; productIds: string[] };
 
 export const STATUS: Record<string, { label: string; cls: string; colorVar: string }> = {

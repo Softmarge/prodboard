@@ -41,6 +41,6 @@ export const POST = withAuth(async (user, req) => {
 
   const updated = await prisma.user.update({ where: { id: user.uid }, data: { name: pending.newName, firstName: pending.newName } });
   await prisma.pendingNameChange.delete({ where: { userId: user.uid } }).catch(() => {});
-  await setSession({ uid: user.uid, oid: user.oid, role: user.role, name: updated.name, email: user.email });
+  await setSession({ uid: user.uid, oid: user.oid, role: user.role, name: updated.name, email: user.email, viewAll: user.viewAll === true });
   return json({ ok: true, name: updated.name });
 });

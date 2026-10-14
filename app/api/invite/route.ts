@@ -5,7 +5,7 @@ import { createInviteLink } from "@/lib/invite";
 export const runtime = "nodejs";
 
 const Post = z.object({
-  role: z.enum(["PM", "VIEWER"]).nullable().optional(),
+  role: z.enum(["PM", "VIEWER", "TASK_OWNER", "REVIEWER"]).nullable().optional(),
   firstName: z.string().max(80).optional(),
   surname: z.string().max(80).optional(),
 });

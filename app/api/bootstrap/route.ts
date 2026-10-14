@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { withAuth, json } from "@/lib/api";
+import { withAuth, json, isOwnerScoped } from "@/lib/api";
 import { TEAM_BASE, HL_PRESET_DEFAULTS } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -37,6 +37,15 @@ export const GET = withAuth(async (user) => {
     tasks = allTasks.filter((t: any) => (t.productId && myProductIds.has(t.productId)) || t.ownerUserId === user.uid);
     const myTaskIds = new Set(tasks.map((t: any) => t.id));
     activity = allActivity.filter((a: any) => a.taskId && myTaskIds.has(a.taskId));
+  } else if (isOwnerScoped(user)) {
+    // Task owner / reviewer without the viewer add-on: only their own tasks, plus
+    // the products those tasks belong to so names resolve. (Reviewed tasks join
+    // here once the reviewer workflow lands.)
+    tasks = allTasks.filter((t: any) => t.ownerUserId === user.uid);
+    const myProductIds = new Set(tasks.filter((t: any) => t.productId).map((t: any) => t.productId));
+    products = allProducts.filter((p: any) => myProductIds.has(p.id));
+    const myTaskIds = new Set(tasks.map((t: any) => t.id));
+    activity = allActivity.filter((a: any) => a.taskId && myTaskIds.has(a.taskId));
   }
 
   const seen = new Set<string>();
@@ -53,7 +62,7 @@ export const GET = withAuth(async (user) => {
   ];
 
   return json({
-    me: { id: user.uid, name: user.name, email: user.email, role: user.role },
+    me: { id: user.uid, name: user.name, email: user.email, role: user.role, viewAll: user.viewAll === true },
     organization: org ? { id: org.id, name: org.name } : null,
     products,
     tasks,

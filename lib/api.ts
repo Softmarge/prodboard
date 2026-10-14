@@ -25,6 +25,20 @@ export function canWrite(user: SessionUser): boolean {
   return user.role === "ADMIN" || user.role === "PM";
 }
 
+/** Can this user see the whole organization (read-only is enough)? Task owners
+ *  and reviewers are scoped to their own work unless a Lead PM also grants them
+ *  viewer access (viewAll). */
+export function canViewAll(user: SessionUser): boolean {
+  if (user.role === "ADMIN" || user.role === "VIEWER") return true;
+  if (user.role === "TASK_OWNER" || user.role === "REVIEWER") return !!user.viewAll;
+  return false;
+}
+
+/** A role scoped to only its own tasks (and reviewed tasks), not the whole org. */
+export function isOwnerScoped(user: SessionUser): boolean {
+  return (user.role === "TASK_OWNER" || user.role === "REVIEWER") && !user.viewAll;
+}
+
 /** Admin-only actions (manage users, reassign products, delete). */
 export function isAdmin(user: SessionUser): boolean {
   return user.role === "ADMIN";

@@ -75,7 +75,8 @@ export async function POST(req: Request) {
   const result = await prisma.$transaction(async (tx: any) => {
     const org = existingOrg ?? (await tx.organization.create({ data: { name: orgName } }));
     const isFirst = !existingOrg;
-    const role = invitedOrg ? (pending.role as "PM" | "VIEWER") : isFirst ? "ADMIN" : (pending.role as "PM" | "VIEWER");
+    type JoinRole = "PM" | "VIEWER" | "TASK_OWNER" | "REVIEWER";
+    const role = invitedOrg ? (pending.role as JoinRole) : isFirst ? "ADMIN" : (pending.role as JoinRole);
     const user = await tx.user.create({
       data: { name: pending.name, firstName: pending.firstName, surname: pending.surname, email, passwordHash: pending.passwordHash, role, organizationId: org.id },
     });
@@ -95,6 +96,7 @@ export async function POST(req: Request) {
     role: result.user.role,
     name: result.user.name,
     email: result.user.email,
+    viewAll: (result.user as any).viewAll === true,
   });
   return json({ ok: true });
 }

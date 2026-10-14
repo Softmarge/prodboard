@@ -5,12 +5,15 @@ import bcrypt from "bcryptjs";
 export const SESSION_COOKIE = "pdt_session";
 const MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
+export type Role = "ADMIN" | "PM" | "VIEWER" | "TASK_OWNER" | "REVIEWER";
+
 export type SessionUser = {
   uid: string;
   oid: string; // organizationId
-  role: "ADMIN" | "PM" | "VIEWER";
+  role: Role;
   name: string;
   email: string;
+  viewAll?: boolean; // TASK_OWNER/REVIEWER additionally granted viewer access
 };
 
 function secret(): Uint8Array {
@@ -40,7 +43,7 @@ export async function createToken(user: SessionUser): Promise<string> {
 export async function readToken(token: string): Promise<SessionUser | null> {
   try {
     const { payload } = await jwtVerify(token, secret());
-    const { uid, oid, role, name, email } = payload as Record<string, unknown>;
+    const { uid, oid, role, name, email, viewAll } = payload as Record<string, unknown>;
     if (typeof uid !== "string" || typeof oid !== "string") return null;
     return {
       uid,
@@ -48,6 +51,7 @@ export async function readToken(token: string): Promise<SessionUser | null> {
       role: role as SessionUser["role"],
       name: String(name ?? ""),
       email: String(email ?? ""),
+      viewAll: viewAll === true,
     };
   } catch {
     return null;

@@ -9,7 +9,7 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
   return (
     <Dashboard
-      me={{ id: user.uid, name: user.name, email: user.email, role: user.role }}
+      me={{ id: user.uid, name: user.name, email: user.email, role: user.role, viewAll: user.viewAll === true }}
     />
   );
 }

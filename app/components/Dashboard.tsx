@@ -27,11 +27,12 @@ import {
   productDisplay,
   productOption,
   relTime,
+  roleLabel,
   statusMeta,
   todayYMD,
 } from "./helpers";
 
-type Me = { id: string; name: string; email: string; role: Role };
+type Me = { id: string; name: string; email: string; role: Role; viewAll?: boolean };
 type HlPreset = { name: string; color: string };
 type PresenceMember = { id: string; name: string; role: Role; lastSeenAt: string | null; online: boolean };
 
@@ -72,9 +73,13 @@ function PrBadge({ t }: { t: Task }) {
 
 export default function Dashboard({ me }: { me: Me }) {
   const router = useRouter();
-  const canWrite = me.role !== "VIEWER";
   const isAdmin = me.role === "ADMIN";
   const isPM = me.role === "PM";
+  const canWrite = isAdmin || isPM;
+  const isOwnerRole = me.role === "TASK_OWNER" || me.role === "REVIEWER";
+  // Task owners / reviewers only see their own work unless a Lead PM also grants
+  // them viewer (org read-only) access.
+  const canViewAll = isAdmin || me.role === "VIEWER" || (isOwnerRole && !!me.viewAll);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -101,6 +106,8 @@ export default function Dashboard({ me }: { me: Me }) {
 
   const [toast, setToast] = useState("");
   const [taskModal, setTaskModal] = useState<{ open: boolean; editing: Task | null; preProduct?: string | null; preStatus?: StatusKey }>({ open: false, editing: null });
+  const [moveConfirm, setMoveConfirm] = useState<{ id: string; ns: StatusKey; title: string; from: StatusKey } | null>(null);
+  const [moveBusy, setMoveBusy] = useState(false);
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
   const [prodCreateOpen, setProdCreateOpen] = useState(false);
   const [prodSettings, setProdSettings] = useState<string | null>(null);
@@ -246,19 +253,26 @@ export default function Dashboard({ me }: { me: Me }) {
   const myProducts = useMemo(() => scopedProducts.filter((p) => (p.pm || "").trim().toLowerCase() === me.name.trim().toLowerCase()), [scopedProducts, me.name]);
   const myOwnedTasks = useMemo(() => tasks.filter((t) => t.ownerUserId === me.id), [tasks, me.id]);
   const ownsTasks = myOwnedTasks.length > 0;
-  // Tabs depend on role; anyone who owns tasks (or has tasks to claim) also gets My Tasks.
+  // Tabs depend on capability. A task owner / reviewer scoped to their own work
+  // gets only My Tasks; granting them viewer access opens the org-wide tabs.
   const tabDefs = useMemo<[MainView, string][]>(() => {
-    const base: [MainView, string][] = isPM
-      ? [["board", "My Main Board"], ["myproducts", "My Products"], ["activity", "My Activity"]]
-      : isAdmin
-        ? [["board", "Main Board"], ["myproducts", "My Products"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]]
-        : [["board", "Main Board"], ["products", "Products"], ["report", "Weekly report"], ["sheet", "Sheet"]];
-    if (ownsTasks || claimable.length > 0) {
-      base.splice(1, 0, ["mytasks", "My Tasks"]);
+    let base: [MainView, string][];
+    if (isPM) base = [["board", "My Main Board"], ["myproducts", "My Products"], ["activity", "My Activity"]];
+    else if (isAdmin) base = [["board", "Main Board"], ["myproducts", "My Products"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]];
+    else if (canViewAll) base = [["board", "Main Board"], ["products", "Products"], ["report", "Weekly report"], ["sheet", "Sheet"]];
+    else base = [];
+    if (ownsTasks || claimable.length > 0 || isOwnerRole) {
+      if (base.length) base.splice(1, 0, ["mytasks", "My Tasks"]);
+      else base.push(["mytasks", "My Tasks"]);
     }
     if (isAdmin || isPM) base.push(["feedbacks", "Owner Feedbacks"]);
     return base;
-  }, [isPM, isAdmin, ownsTasks, claimable.length]);
+  }, [isPM, isAdmin, canViewAll, isOwnerRole, ownsTasks, claimable.length]);
+  // Keep the active tab valid: a scoped owner has no Main Board, so fall back to
+  // whatever tab is first (My Tasks).
+  useEffect(() => {
+    if (tabDefs.length && !tabDefs.some(([v]) => v === view)) setView(tabDefs[0][0]);
+  }, [tabDefs, view]);
   const teamOptions = useMemo(() => { const s = new Set<string>(); teams.forEach((t) => s.add(t)); tasks.forEach((t) => t.team && s.add(t.team)); return Array.from(s); }, [teams, tasks]);
 
   const dispName = useCallback((id: string | null) => productDisplay(id ? productById[id] : null), [productById]);
@@ -294,7 +308,7 @@ export default function Dashboard({ me }: { me: Me }) {
 
   async function logout() { await api("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }
 
-  async function moveStatus(id: string, ns: StatusKey) {
+  function moveStatus(id: string, ns: StatusKey) {
     const t = tasks.find((x) => x.id === id); if (!t || t.status === ns || asOf) return;
     // Moving out of Not started needs a start and due date: open the editor to fill them.
     if (ns !== "NOT_STARTED" && (!t.startDate || !t.dueDate)) {
@@ -308,6 +322,10 @@ export default function Dashboard({ me }: { me: Me }) {
       flash("Add a reason for the blocker to mark this Blocked");
       return;
     }
+    // Confirm the move before it is applied.
+    setMoveConfirm({ id, ns, title: t.title, from: t.status });
+  }
+  async function performMove(id: string, ns: StatusKey) {
     setTasks((prev) => prev.map((x) => (x.id === id ? { ...x, status: ns } : x))); // optimistic
     try { await api(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status: ns }) }); await reloadWork(); flash(`Moved to ${statusMeta(ns).label}`); }
     catch (e) { flash((e as Error).message); reloadWork(); }
@@ -361,7 +379,7 @@ export default function Dashboard({ me }: { me: Me }) {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
           {notifUnread > 0 ? <span className="bellcount">{notifUnread > 9 ? "9+" : notifUnread}</span> : null}
         </button>
-        <div className="whoami"><button className="linklike" style={{ fontWeight: 600, color: "var(--fg)" }} title="Edit your name" onClick={() => setProfileOpen(true)}>{me.name}</button><span className="rolepill">{me.role === "ADMIN" ? "Lead PM" : me.role === "PM" ? "PM" : "Viewer"}</span></div>
+        <div className="whoami"><button className="linklike" style={{ fontWeight: 600, color: "var(--fg)" }} title="Edit your name" onClick={() => setProfileOpen(true)}>{me.name}</button><span className="rolepill">{roleLabel(me.role)}{isOwnerRole && me.viewAll ? " + Viewer" : ""}</span></div>
         <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
         {isAdmin && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
         <button className="iconbtn" title="Toggle light / dark" onClick={toggleTheme} aria-label="Toggle theme">◐</button>
@@ -479,6 +497,16 @@ export default function Dashboard({ me }: { me: Me }) {
 
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} onDone={async (msg) => { setImportOpen(false); await reloadProducts(); flash(msg); }} flash={flash} />}
 
+      {moveConfirm && (
+        <ConfirmAction
+          title="Move this task?"
+          message={<>Move <b>{moveConfirm.title}</b> from <b>{statusMeta(moveConfirm.from).label}</b> to <b>{statusMeta(moveConfirm.ns).label}</b>?</>}
+          confirmLabel={`Move to ${statusMeta(moveConfirm.ns).label}`}
+          busy={moveBusy}
+          onConfirm={async () => { const mc = moveConfirm; setMoveBusy(true); await performMove(mc.id, mc.ns); setMoveBusy(false); setMoveConfirm(null); }}
+          onCancel={() => { if (!moveBusy) setMoveConfirm(null); }}
+        />
+      )}
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} flash={flash} />}
 
       {membersOpen && <MembersModal meId={me.id} onClose={() => setMembersOpen(false)} flash={flash} />}
@@ -1110,6 +1138,8 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, meId, members, o
   const [context, setContext] = useState(task.context || "");
   const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const [confirmExit, setConfirmExit] = useState(false);
+  const [confirmPost, setConfirmPost] = useState(false);
+  const [confirmMarkDone, setConfirmMarkDone] = useState(false);
   const contextDirty = context.trim() !== (task.context || "").trim();
   const postDirty = status !== task.status || !!note.trim() || blocker.trim() !== (task.blocker || "");
   const dirty = contextDirty || postDirty;
@@ -1121,11 +1151,17 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, meId, members, o
   }
   async function doSaveContext() { await api(`/api/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ context }) }); }
   async function doPost() { await api(`/api/tasks/${task.id}/updates`, { method: "POST", body: JSON.stringify({ status, note, blocker }) }); }
-  async function post() {
-    if (!postDirty) return setErr("Nothing to post. Change the status, add a note, or edit the blocker.");
+  const statusChanging = status !== task.status;
+  async function reallyPost() {
     setErr(""); setBusy(true);
     try { await doPost(); setNote(""); onPosted("Update posted"); onClose(); }
-    catch (ex) { setErr((ex as Error).message); setBusy(false); }
+    catch (ex) { setErr((ex as Error).message); setBusy(false); setConfirmPost(false); }
+  }
+  function post() {
+    if (!postDirty) return setErr("Nothing to post. Change the status, add a note, or edit the blocker.");
+    // Confirm before a status move; a plain note/blocker edit posts straight away.
+    if (statusChanging) { setErr(""); setConfirmPost(true); return; }
+    reallyPost();
   }
   async function saveContext() {
     if (!contextDirty) return;
@@ -1239,7 +1275,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, meId, members, o
               <div className="field"><label>Progress note</label><textarea value={ownerNote} onChange={(e2) => setOwnerNote(e2.target.value)} placeholder="what you did; evidence it is moving" rows={3} /></div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button className="btn sm" onClick={ownerPostNote} disabled={busy}>Post note</button>
-                {!awaiting && task.status !== "COMPLETE" ? <button className="btn primary sm" onClick={ownerMarkDone} disabled={busy}>Mark done</button> : null}
+                {!awaiting && task.status !== "COMPLETE" ? <button className="btn primary sm" onClick={() => setConfirmMarkDone(true)} disabled={busy}>Mark done</button> : null}
               </div>
               {err && <div className="err">{err}</div>}
             </div>
@@ -1257,7 +1293,25 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, meId, members, o
         </div>
       </aside>
       {confirmExit && <ConfirmExit what={`your update on “${task.title}”`} saving={busy} onSave={saveAndExit} onDiscard={onClose} onCancel={() => setConfirmExit(false)} />}
+      {confirmPost && <ConfirmAction title="Post this update?" message={<>Change the status of <b>{task.title}</b> from <b>{statusMeta(task.status).label}</b> to <b>{statusMeta(status).label}</b>?</>} confirmLabel="Post update" busy={busy} onConfirm={reallyPost} onCancel={() => { if (!busy) setConfirmPost(false); }} />}
+      {confirmMarkDone && <ConfirmAction title="Mark as done?" message={<>Mark <b>{task.title}</b> as done and send it to the PM for confirmation?</>} confirmLabel="Mark done" busy={busy} onConfirm={() => { setConfirmMarkDone(false); ownerMarkDone(); }} onCancel={() => { if (!busy) setConfirmMarkDone(false); }} />}
     </>
+  );
+}
+
+// A generic confirm dialog (used for status moves and marking a task done).
+function ConfirmAction({ title, message, confirmLabel, busy, onConfirm, onCancel }: { title: string; message: React.ReactNode; confirmLabel: string; busy: boolean; onConfirm: () => void; onCancel: () => void; }) {
+  return (
+    <div className="confirmwrap" onClick={onCancel}>
+      <div className="confirmbox" role="alertdialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3>{title}</h3>
+        <p>{message}</p>
+        <div className="confirm-actions">
+          <button className="btn ghost sm" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className="btn primary sm" onClick={onConfirm} disabled={busy}>{busy ? "Working…" : confirmLabel}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1678,7 +1732,6 @@ function HighlightPresetsModal({ presets, onClose, onSaved, flash }: { presets: 
 function PresencePanel({ members, meId, onClose }: { members: PresenceMember[]; meId: string; onClose: () => void; }) {
   const online = members.filter((m) => m.online);
   const offline = members.filter((m) => !m.online);
-  const roleLabel = (r: Role) => (r === "ADMIN" ? "Lead PM" : r === "PM" ? "PM" : "Viewer");
   return (
     <>
       <div className="hlscrim" onClick={onClose} />
@@ -1733,8 +1786,9 @@ function FeedbacksView({ tasks, activity, dispName, onOpenTask }: { tasks: Task[
   );
 }
 
+type InviteRoleChoice = "" | "PM" | "VIEWER" | "TASK_OWNER" | "REVIEWER";
 function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: string) => void; }) {
-  const [role, setRole] = useState<"" | "PM" | "VIEWER">(""); // "" = let them choose
+  const [role, setRole] = useState<InviteRoleChoice>(""); // "" = let them choose
   const [firstName, setFirstName] = useState("");
   const [surname, setSurname] = useState("");
   const [url, setUrl] = useState("");
@@ -1762,7 +1816,12 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
   // Any change to the settings means the shown link no longer matches them.
   function onSetting<T>(setter: (v: T) => void) { return (v: T) => { setter(v); setUrl(""); }; }
 
-  const roleLabel = role === "VIEWER" ? "Viewer (read-only)" : role === "PM" ? "Product Manager" : "their choice of role";
+  const inviteRoleLabel =
+    role === "VIEWER" ? "Viewer (read-only)"
+    : role === "PM" ? "Product Manager"
+    : role === "TASK_OWNER" ? "Task owner"
+    : role === "REVIEWER" ? "Reviewer"
+    : "their choice of role";
   const named = [firstName.trim(), surname.trim()].filter(Boolean).join(" ");
 
   return (
@@ -1775,12 +1834,14 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
 
           <div className="field">
             <label htmlFor="invite-role">Invite as</label>
-            <select id="invite-role" value={role} onChange={(e) => onSetting(setRole)(e.target.value as "" | "PM" | "VIEWER")}>
+            <select id="invite-role" value={role} onChange={(e) => onSetting(setRole)(e.target.value as InviteRoleChoice)}>
               <option value="">Let them choose</option>
               <option value="PM">Product Manager</option>
               <option value="VIEWER">Viewer (read-only)</option>
+              <option value="TASK_OWNER">Task owner (sees only their tasks)</option>
+              <option value="REVIEWER">Reviewer (sees only tasks they review)</option>
             </select>
-            <div className="hint" style={{ marginTop: 4 }}>Leave as “Let them choose” to not preselect a role. A link can never grant admin.</div>
+            <div className="hint" style={{ marginTop: 4 }}>Leave as “Let them choose” to not preselect a role. A link can never grant admin. You can also grant a task owner or reviewer viewer access later under Members.</div>
           </div>
 
           <div className="two">
@@ -1807,7 +1868,7 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
                 <button className="btn ghost sm" onClick={createLink} disabled={busy}>New link</button>
                 <button className="btn primary sm" onClick={copy}>Copy link</button>
               </div>
-              <div className="hint" style={{ marginTop: 10 }}>This link invites as <b>{roleLabel}</b>{named ? <>, prefilled for <b>{named}</b>. Create a separate link for each person you name.</> : <>. It is reusable, so anyone you share it with can join.</>}</div>
+              <div className="hint" style={{ marginTop: 10 }}>This link invites as <b>{inviteRoleLabel}</b>{named ? <>, prefilled for <b>{named}</b>. Create a separate link for each person you name.</> : <>. It is reusable, so anyone you share it with can join.</>}</div>
             </>
           )}
         </div>
@@ -1822,6 +1883,7 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
   const load = useCallback(async () => { try { setMembers((await api("/api/users")).users); } catch (e) { flash((e as Error).message); } finally { setLoading(false); } }, [flash]);
   useEffect(() => { load(); }, [load]);
   async function changeRole(id: string, role: Role) { try { await api("/api/users", { method: "PATCH", body: JSON.stringify({ userId: id, role }) }); await load(); flash("Role updated"); } catch (e) { flash((e as Error).message); } }
+  async function changeViewAll(id: string, viewAll: boolean) { try { await api("/api/users", { method: "PATCH", body: JSON.stringify({ userId: id, viewAll }) }); await load(); flash(viewAll ? "Viewer access granted" : "Viewer access removed"); } catch (e) { flash((e as Error).message); } }
   async function changeName(id: string, name: string, prev: string) {
     const n = name.trim();
     if (!n || n === prev) return;
@@ -1833,10 +1895,12 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
       <div className="modal" role="dialog" aria-modal="true">
         <div className="dhead"><h2>Members</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
-          <div className="hint" style={{ marginBottom: 10 }}>Admins manage everything. PMs create and update products and tasks. Viewers (e.g. the CTO) have read-only access. A member’s name must match the PM name on their products for scoping to work.</div>
+          <div className="hint" style={{ marginBottom: 10 }}>Admins manage everything. PMs create and update products and tasks. Viewers (e.g. the CTO) have read-only access. Task owners and reviewers see only their own work; tick “Also a viewer” to additionally give them read-only access to the whole organization. A member’s name must match the PM name on their products for scoping to work.</div>
           {loading ? <div className="hint">Loading…</div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {members.map((m) => (
+              {members.map((m) => {
+                const ownerScopedRole = m.role === "TASK_OWNER" || m.role === "REVIEWER";
+                return (
                 <div className="prow" key={m.id}>
                   <div className="prow-top">
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -1844,11 +1908,17 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
                       <div className="hint">{m.email}{m.id === meId ? " · you" : ""}</div>
                     </div>
                     <select value={m.role} onChange={(e) => changeRole(m.id, e.target.value as Role)} style={{ padding: "6px 8px", border: "1px solid var(--border-strong)", borderRadius: 6, background: "var(--surface)" }}>
-                      <option value="ADMIN">Admin (Lead PM)</option><option value="PM">PM</option><option value="VIEWER">Viewer</option>
+                      <option value="ADMIN">Admin (Lead PM)</option><option value="PM">PM</option><option value="VIEWER">Viewer</option><option value="TASK_OWNER">Task owner</option><option value="REVIEWER">Reviewer</option>
                     </select>
                   </div>
+                  {ownerScopedRole && (
+                    <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!!m.viewAll} onChange={(e) => changeViewAll(m.id, e.target.checked)} />
+                      Also a viewer (read-only access to the whole organization)
+                    </label>
+                  )}
                 </div>
-              ))}
+              ); })}
             </div>
           )}
         </div>

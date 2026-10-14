@@ -5,6 +5,16 @@ import Link from "next/link";
 import PasswordInput from "@/app/components/PasswordInput";
 import { passwordProblem, PASSWORD_MIN } from "@/lib/password";
 
+function roleName(r: string | null): string {
+  switch (r) {
+    case "VIEWER": return "Viewer (read-only)";
+    case "PM": return "Product Manager";
+    case "TASK_OWNER": return "Task owner";
+    case "REVIEWER": return "Reviewer";
+    default: return "Product Manager";
+  }
+}
+
 function SignupForm() {
   const router = useRouter();
   const invite = useSearchParams().get("invite") || "";
@@ -156,11 +166,13 @@ function SignupForm() {
           <select id="role" value={form.role} onChange={(e) => set("role", e.target.value)} disabled={joining && !!invitedRole}>
             <option value="PM">Product Manager</option>
             <option value="VIEWER">Viewer (read-only)</option>
+            {(invitedRole === "TASK_OWNER" || form.role === "TASK_OWNER") && <option value="TASK_OWNER">Task owner</option>}
+            {(invitedRole === "REVIEWER" || form.role === "REVIEWER") && <option value="REVIEWER">Reviewer</option>}
           </select>
           <div className="hint" style={{ marginTop: 4 }}>
             {joining
               ? (invitedRole
-                  ? <>Set to <b>{invitedRole === "VIEWER" ? "Viewer (read-only)" : "Product Manager"}</b> by your invite link. An admin can change it later under Members.</>
+                  ? <>Set to <b>{roleName(invitedRole)}</b> by your invite link. An admin can change it later under Members.</>
                   : "Choose your role. An admin can change it later under Members.")
               : "If you are the first to register this organization, you will be made admin automatically."}
           </div>

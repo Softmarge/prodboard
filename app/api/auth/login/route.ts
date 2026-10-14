@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     role: user.role,
     name: user.name,
     email: user.email,
+    viewAll: (user as any).viewAll === true,
   });
   return json({ ok: true, user: { id: user.id, name: user.name, role: user.role } });
 }
