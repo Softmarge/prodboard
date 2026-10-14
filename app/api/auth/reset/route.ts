@@ -4,12 +4,15 @@ import { prisma } from "@/lib/db";
 import { json, error } from "@/lib/api";
 import { hashPassword } from "@/lib/auth";
 import { passwordProblem } from "@/lib/password";
+import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 
 const Body = z.object({ token: z.string().min(10), password: z.string() });
 
 export async function POST(req: Request) {
+  const rl = await rateLimit("verify", clientIp(req), LIMITS.verify);
+  if (!rl.ok) return tooMany(rl.retryAfter, "Too many attempts. Please wait a while and try again.");
   let data;
   try {
     data = Body.parse(await req.json());

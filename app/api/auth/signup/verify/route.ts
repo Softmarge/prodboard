@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { setSession } from "@/lib/auth";
 import { error, json } from "@/lib/api";
+import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,8 @@ function hashCode(c: string) {
 // Step 2 of signup: check the code, then create the organization (if needed),
 // the user, and the session. The pending record is consumed on success.
 export async function POST(req: Request) {
+  const rl = await rateLimit("verify", clientIp(req), LIMITS.verify);
+  if (!rl.ok) return tooMany(rl.retryAfter, "Too many attempts. Please wait a while and try again.");
   let data;
   try {
     data = Body.parse(await req.json());

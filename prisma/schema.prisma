@@ -63,6 +63,18 @@ model FeatureAlert {
   @@index([organizationId])
 }
 
+// Fixed-window rate-limit counters. One row per (bucket, identifier, window).
+// Works across serverless invocations because the count lives in Postgres.
+model RateLimit {
+  id        String   @id @default(cuid())
+  key       String   @unique // bucket:identifier:windowStart
+  count     Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
 model FeatureAlertDismissal {
   id        String       @id @default(cuid())
   alertId   String

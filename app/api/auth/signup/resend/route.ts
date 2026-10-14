@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { error, json } from "@/lib/api";
 import { sendEmail } from "@/lib/email";
+import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,8 @@ function hashCode(c: string) {
 
 // Resend a fresh code for an in-progress signup. Resets attempts and expiry.
 export async function POST(req: Request) {
+  const rl = await rateLimit("emailSend", clientIp(req), LIMITS.emailSend);
+  if (!rl.ok) return tooMany(rl.retryAfter, "Too many code requests. Please wait a while and try again.");
   let data;
   try {
     data = Body.parse(await req.json());

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession, SessionUser } from "./auth";
+import { rateLimit, tooMany, LIMITS } from "./ratelimit";
 
 export type Handler = (ctx: {
   user: SessionUser;
@@ -54,6 +55,11 @@ export function withAuth(
   return async (req: Request, context: { params?: Record<string, string> }) => {
     const user = await getSession();
     if (!user) return error("Not signed in", 401);
+    // Safety-net cap on writes per user. Reads (polled often) are left uncounted.
+    if (req.method && req.method !== "GET" && req.method !== "HEAD") {
+      const rl = await rateLimit("api", user.uid, LIMITS.api);
+      if (!rl.ok) return tooMany(rl.retryAfter, "You are doing that too fast. Give it a moment and try again.");
+    }
     return handler(user, req, context?.params ?? {});
   };
 }

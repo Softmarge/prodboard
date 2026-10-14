@@ -5,6 +5,7 @@ import { hashPassword } from "@/lib/auth";
 import { error, json } from "@/lib/api";
 import { passwordProblem } from "@/lib/password";
 import { sendEmail, emailConfigured } from "@/lib/email";
+import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,8 @@ function hashCode(c: string) {
 // Step 1 of signup: validate, stash a pending record, and email a 4-digit code.
 // No account is created until the code is verified.
 export async function POST(req: Request) {
+  const rl = await rateLimit("signup", clientIp(req), LIMITS.signup);
+  if (!rl.ok) return tooMany(rl.retryAfter, "Too many sign-up attempts. Please wait a while and try again.");
   let data;
   try {
     data = Body.parse(await req.json());

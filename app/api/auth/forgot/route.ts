@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { json, error } from "@/lib/api";
 import { sendEmail } from "@/lib/email";
+import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,8 @@ const Body = z.object({ email: z.string().email() });
 // Always responds the same way whether or not the email exists, so the form
 // never reveals which addresses have accounts.
 export async function POST(req: Request) {
+  const rl = await rateLimit("emailSend", clientIp(req), LIMITS.emailSend);
+  if (!rl.ok) return tooMany(rl.retryAfter, "Too many reset requests. Please wait a while and try again.");
   let data;
   try {
     data = Body.parse(await req.json());
