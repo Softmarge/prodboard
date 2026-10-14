@@ -12,6 +12,7 @@ const Patch = z.object({
   productId: z.string().optional(),
   team: z.string().min(1).max(80).optional(),
   owner: z.string().min(1).max(120).optional(),
+  reviewer: z.string().max(120).optional(),
   priority: z.number().int().min(1).max(3).optional(),
   status: z.enum(STATUSES).optional(),
   startDate: z.string().optional(),
@@ -68,6 +69,14 @@ export const PATCH = withAuth(async (user, req, params) => {
     const { resolveOwnerUserId } = await import("@/lib/owner");
     patch.ownerUserId = await resolveOwnerUserId(user.oid, data.owner);
   }
+  let newReviewerUserId: string | null | undefined;
+  if (data.reviewer !== undefined) {
+    const rv = data.reviewer.trim();
+    patch.reviewer = rv || null;
+    const { resolveOwnerUserId } = await import("@/lib/owner");
+    newReviewerUserId = rv ? await resolveOwnerUserId(user.oid, rv) : null;
+    patch.reviewerUserId = newReviewerUserId;
+  }
   if (data.priority !== undefined) patch.priority = data.priority;
   if (data.status !== undefined) patch.status = data.status;
   if (data.startDate !== undefined) patch.startDate = toDate(data.startDate);
@@ -77,7 +86,8 @@ export const PATCH = withAuth(async (user, req, params) => {
 
   const task = await prisma.task.update({ where: { id: existing.id }, data: patch });
 
-  if (data.status !== undefined && data.status !== existing.status) {
+  const statusChanged = data.status !== undefined && data.status !== existing.status;
+  if (statusChanged) {
     await prisma.activity.create({
       data: {
         type: "status",
@@ -88,6 +98,20 @@ export const PATCH = withAuth(async (user, req, params) => {
         organizationId: user.oid,
       },
     });
+  }
+
+  // Reviewer notifications: a newly assigned reviewer, and whenever a task enters review.
+  const effectiveReviewerId = (task as any).reviewerUserId as string | null;
+  const assignedReviewer = newReviewerUserId !== undefined && newReviewerUserId && newReviewerUserId !== existing.reviewerUserId;
+  const enteredReview = statusChanged && data.status === "IN_REVIEW" && !!effectiveReviewerId;
+  if (assignedReviewer || enteredReview) {
+    const { notifyTask } = await import("@/lib/notify");
+    if (assignedReviewer && newReviewerUserId !== user.uid) {
+      await notifyTask(user.oid, { taskId: task.id, type: "review_assigned", text: `${user.name} added you as reviewer on “${task.title}”`, to: [newReviewerUserId] });
+    }
+    if (enteredReview && effectiveReviewerId !== user.uid) {
+      await notifyTask(user.oid, { taskId: task.id, type: "review_ready", text: `“${task.title}” is ready for your review`, to: [effectiveReviewerId], excludeUserId: user.uid });
+    }
   }
   return json({ task });
 });

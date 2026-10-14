@@ -45,11 +45,11 @@ function hlTint(color?: string): string | undefined {
   if (!color) return undefined;
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color + "2E" : color;
 }
-type MainView = "board" | "myproducts" | "mytasks" | "products" | "sheet" | "report" | "activity" | "feedbacks";
+type MainView = "board" | "myproducts" | "mytasks" | "myreviews" | "products" | "sheet" | "report" | "activity" | "feedbacks";
 // A multi-capability user acts under one "hat" at a time. The mode is a UI lens;
 // the server still authorizes by the user's real capability.
-type Mode = "pm" | "owner" | "viewer";
-const MODE_LABEL: Record<Mode, string> = { pm: "PM", owner: "Task Owner", viewer: "Viewer" };
+type Mode = "pm" | "owner" | "reviewer" | "viewer";
+const MODE_LABEL: Record<Mode, string> = { pm: "PM", owner: "Task Owner", reviewer: "Reviewer", viewer: "Viewer" };
 type BoardView = "kanban" | "list" | "grid";
 type Filters = { q: string; team: string; product: string; owner: string; sr: string; status: string; pm: string };
 const EMPTY_FILTERS: Filters = { q: "", team: "", product: "", owner: "", sr: "", status: "", pm: "" };
@@ -257,33 +257,39 @@ export default function Dashboard({ me }: { me: Me }) {
   const myProducts = useMemo(() => scopedProducts.filter((p) => (p.pm || "").trim().toLowerCase() === me.name.trim().toLowerCase()), [scopedProducts, me.name]);
   const myOwnedTasks = useMemo(() => tasks.filter((t) => t.ownerUserId === me.id), [tasks, me.id]);
   const ownsTasks = myOwnedTasks.length > 0;
+  const myReviewedTasks = useMemo(() => tasks.filter((t) => t.reviewerUserId === me.id), [tasks, me.id]);
+  const reviewsTasks = myReviewedTasks.length > 0;
+  const isReviewerRole = me.role === "REVIEWER";
 
   // The hats this user holds. A user with more than one gets a mode switcher and
   // acts under one hat at a time (do owner work in Task Owner mode, confirm in PM
-  // mode). Default order is the priority order below: PM, then Task Owner, then Viewer.
+  // mode). Default order is the priority order below: PM, Task Owner, Reviewer, Viewer.
   const hats = useMemo<Mode[]>(() => {
     const h: Mode[] = [];
     if (isAdmin || isPM) h.push("pm");
-    if (ownsTasks || claimable.length > 0 || isOwnerRole) h.push("owner");
+    if (ownsTasks || claimable.length > 0 || (isOwnerRole && !isReviewerRole)) h.push("owner");
+    if (reviewsTasks || isReviewerRole) h.push("reviewer");
     if (hasViewerHat) h.push("viewer");
     return h.length ? h : ["viewer"];
-  }, [isAdmin, isPM, isOwnerRole, hasViewerHat, ownsTasks, claimable.length]);
+  }, [isAdmin, isPM, isOwnerRole, isReviewerRole, hasViewerHat, ownsTasks, reviewsTasks, claimable.length]);
   // The active mode: the chosen one if the user still holds that hat, else the
   // strongest available. Derived so a remembered choice reappears once its hat loads.
   const mode: Mode = hats.includes(chosenMode) ? chosenMode : hats[0];
   // Effective capability under the current mode (the server still checks the real one).
   const canWrite = mode === "pm";
   const ownerActing = mode === "owner";
+  const reviewerActing = mode === "reviewer";
   function pickMode(m: Mode) {
     setChosenMode(m); lsSet("pdt_mode", m);
     setProductBoardId(null);
-    setView(m === "owner" ? "mytasks" : "board");
+    setView(m === "owner" ? "mytasks" : m === "reviewer" ? "myreviews" : "board");
   }
 
   // Tabs follow the active mode: PM mode shows the management tabs and Owner
   // Feedbacks; Viewer mode the org-wide read-only tabs; Task Owner mode just My Tasks.
   const tabDefs = useMemo<[MainView, string][]>(() => {
     if (mode === "owner") return [["mytasks", "My Tasks"]];
+    if (mode === "reviewer") return [["myreviews", "My Reviews"]];
     if (mode === "viewer") return [["board", "Main Board"], ["products", "Products"], ["report", "Weekly report"], ["sheet", "Sheet"]];
     // pm mode
     const base: [MainView, string][] = isPM
@@ -481,6 +487,7 @@ export default function Dashboard({ me }: { me: Me }) {
           : view === "board" ? <Board tasks={visible} allCount={scopedTasks.length} asOf={asOf} activity={activity} boardView={boardView} setBoardView={(v) => { setBoardView(v); lsSet("pdt_bview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onOpenTask={setDrawerTaskId} onMove={moveStatus} onHlPresets={() => setHlPresetsOpen(true)} />
           : view === "products" || view === "myproducts" ? <ProductsView products={view === "myproducts" ? myProducts : scopedProducts} tasks={scopedTasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} isAdmin={isAdmin} onCreate={() => setProdCreateOpen(true)} onImport={() => setImportOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
           : view === "mytasks" ? <MyTasksView tasks={visible.filter((t) => t.ownerUserId === me.id)} activity={activity} asOf={asOf} cmpTasks={cmpTasks} dispName={dispName} tview={myTaskView} setTview={(v) => { setMyTaskView(v); lsSet("pdt_mtview", v); }} onOpenTask={setDrawerTaskId} claimableCount={claimable.length} onClaim={() => setClaimOpen(true)} />
+          : view === "myreviews" ? <MyReviewsView tasks={visible.filter((t) => t.reviewerUserId === me.id)} activity={activity} asOf={asOf} cmpTasks={cmpTasks} dispName={dispName} tview={myTaskView} setTview={(v) => { setMyTaskView(v); lsSet("pdt_mtview", v); }} onOpenTask={setDrawerTaskId} />
           : view === "sheet" ? <Sheet tasks={visible} asOf={asOf} activity={activity} dispName={dispName} onOpenTask={setDrawerTaskId} />
           : view === "feedbacks" ? <FeedbacksView tasks={scopedTasks.filter((t) => t.ownerDoneAt)} activity={activity} dispName={dispName} onOpenTask={setDrawerTaskId} />
           : view === "report" ? <Report tasks={scopedTasks} activity={scopedActivity} dispName={dispName} range={range} setRange={setRange} eventText={eventText} />
@@ -495,7 +502,7 @@ export default function Dashboard({ me }: { me: Me }) {
       )}
 
       {drawerTask && (
-        <TaskDrawer task={drawerTask} activity={activity} dispName={dispName} asOf={asOf} canWrite={canWrite} ownerActing={ownerActing} meId={me.id} members={presence}
+        <TaskDrawer task={drawerTask} activity={activity} dispName={dispName} asOf={asOf} canWrite={canWrite} ownerActing={ownerActing} reviewerActing={reviewerActing} meId={me.id} members={presence}
           onClose={() => setDrawerTaskId(null)}
           onEdit={(t) => { setDrawerTaskId(null); setTaskModal({ open: true, editing: t }); }}
           onPosted={async (msg) => { await reloadWork(); flash(msg); }} />
@@ -813,6 +820,28 @@ function MyTasksView({ tasks, activity, asOf, cmpTasks, dispName, tview, setTvie
   );
 }
 
+// ---------------- My Reviews (reviewer persona) ----------------
+function MyReviewsView({ tasks, activity, asOf, cmpTasks, dispName, tview, setTview, onOpenTask }: { tasks: Task[]; activity: Activity[]; asOf: string; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; tview: "list" | "grid"; setTview: (v: "list" | "grid") => void; onOpenTask: (id: string) => void; }) {
+  return (
+    <>
+      <div className="pbbar">
+        <div className="segmented sm">
+          <button aria-pressed={tview === "list"} onClick={() => setTview("list")}>List</button>
+          <button aria-pressed={tview === "grid"} onClick={() => setTview("grid")}>Card grid</button>
+        </div>
+        <span className="grow" />
+      </div>
+      {!tasks.length ? (
+        <div className="empty"><h3>Nothing to review yet</h3><p>Tasks where you are named the reviewer will appear here, and you will be notified when one is ready for review.</p></div>
+      ) : tview === "grid" ? (
+        <GridBoard tasks={tasks} activity={activity} asOf={asOf} cmpTasks={cmpTasks} dispName={dispName} onOpenTask={onOpenTask} />
+      ) : (
+        <ListBoard tasks={tasks} activity={activity} asOf={asOf} cmpTasks={cmpTasks} dispName={dispName} onOpenTask={onOpenTask} />
+      )}
+    </>
+  );
+}
+
 function ClaimModal({ productById, onClose, flash, onClaimed }: { productById: Record<string, Product>; onClose: () => void; flash: (m: string) => void; onClaimed: () => Promise<void> | void; }) {
   const [rows, setRows] = useState<{ id: string; title: string; owner: string; productId: string | null }[]>([]);
   const [all, setAll] = useState(false);
@@ -1053,6 +1082,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
   const [productId, setProductId] = useState(editing?.productId || preProduct || liveProducts[0]?.id || "");
   const [ownerSel, setOwnerSel] = useState(editing?.owner || "");
   const [ownerNew, setOwnerNew] = useState("");
+  const [reviewer, setReviewer] = useState(editing?.reviewer || "");
   const [team, setTeam] = useState(editing?.team || teamOptions[0] || "");
   const [teamTouched, setTeamTouched] = useState(!!editing);
   const [teams, setTeams] = useState(teamOptions);
@@ -1084,7 +1114,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
     if (status !== "NOT_STARTED" && (!start || !due)) return setErr("A start date and due date are required unless the task is Not started.");
     if (status === "BLOCKED" && !blocker.trim()) return setErr("A blocked task needs a reason. Fill in the blocker.");
     setErr(""); setBusy(true);
-    const body = { title, context, productId, owner, team, priority, status, startDate: start, dueDate: due, serviceRequest: sr, blocker };
+    const body = { title, context, productId, owner, reviewer, team, priority, status, startDate: start, dueDate: due, serviceRequest: sr, blocker };
     try {
       if (editing) { await api(`/api/tasks/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) }); onSaved("Task updated"); }
       else { await api("/api/tasks", { method: "POST", body: JSON.stringify(body) }); onSaved("Task created"); }
@@ -1093,8 +1123,8 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
 
   // Unsaved input guard: compare to the task being edited, or any typed content for a new task.
   const dirty = editing
-    ? (title !== (editing.title || "") || context !== (editing.context || "") || blocker !== (editing.blocker || "") || isoToYMD(editing.startDate) !== start || isoToYMD(editing.dueDate) !== due || status !== editing.status || priority !== priorityOf(editing) || (ownerSel && ownerSel !== editing.owner) || ownerNew.trim() !== "")
-    : (!!title.trim() || !!context.trim() || !!blocker.trim() || !!ownerNew.trim() || !!srNew.trim() || !!due || (!!ownerSel && ownerSel !== "__new__"));
+    ? (title !== (editing.title || "") || context !== (editing.context || "") || blocker !== (editing.blocker || "") || isoToYMD(editing.startDate) !== start || isoToYMD(editing.dueDate) !== due || status !== editing.status || priority !== priorityOf(editing) || (ownerSel && ownerSel !== editing.owner) || ownerNew.trim() !== "" || reviewer !== (editing.reviewer || ""))
+    : (!!title.trim() || !!context.trim() || !!blocker.trim() || !!ownerNew.trim() || !!srNew.trim() || !!due || (!!ownerSel && ownerSel !== "__new__") || !!reviewer);
   function requestClose() { if (dirty && !busy) setConfirmExit(true); else onClose(); }
 
   return (
@@ -1142,6 +1172,14 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
             <div className="field"><label>Priority</label><select value={priority} onChange={(e) => setPriority(Number(e.target.value))}><option value={1}>Level 1 (most important)</option><option value={2}>Level 2</option><option value={3}>Level 3 (least important)</option></select></div>
             <div className="field"><label>Status</label><select value={status} onChange={(e) => setStatus(e.target.value as StatusKey)}>{EDIT_STATUSES.map((s) => <option key={s} value={s}>{statusMeta(s).label}</option>)}</select></div>
           </div>
+          <div className="field"><label>Second reviewer <span className="hint">(optional)</span></label>
+            <select value={reviewer} onChange={(e) => setReviewer(e.target.value)}>
+              <option value="">No reviewer</option>
+              {reviewer && !people.some((o) => o === reviewer) ? <option value={reviewer}>{reviewer}</option> : null}
+              {people.filter((o) => registered.has(o.trim().toLowerCase())).map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
+            <div className="hint" style={{ marginTop: 4 }}>A reviewer sees this task in My Reviews, can post review notes, and is notified when it is ready for review. Only people on ProdBoard can be reviewers.</div>
+          </div>
           <div className="two">
             <div className={status !== "NOT_STARTED" ? "field req" : "field"}><label>Start date{status === "NOT_STARTED" ? <span className="hint"> (optional)</span> : null}</label><input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></div>
             <div className={status !== "NOT_STARTED" ? "field req" : "field"}><label>Due date{status === "NOT_STARTED" ? <span className="hint"> (optional)</span> : null}</label><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></div>
@@ -1158,7 +1196,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
 }
 
 // ---------------- Task drawer ----------------
-function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, meId, members, onClose, onEdit, onPosted }: { task: Task; activity: Activity[]; dispName: (id: string | null) => string; asOf: string; canWrite: boolean; ownerActing: boolean; meId: string; members: PresenceMember[]; onClose: () => void; onEdit: (t: Task) => void; onPosted: (msg: string) => void; }) {
+function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, reviewerActing, meId, members, onClose, onEdit, onPosted }: { task: Task; activity: Activity[]; dispName: (id: string | null) => string; asOf: string; canWrite: boolean; ownerActing: boolean; reviewerActing: boolean; meId: string; members: PresenceMember[]; onClose: () => void; onEdit: (t: Task) => void; onPosted: (msg: string) => void; }) {
   const e = effectiveStatus(task, asOf || null, activity);
   const hist = activity.filter((a) => a.taskId === task.id).sort((a, b) => +new Date(b.ts) - +new Date(a.ts));
   const [status, setStatus] = useState<StatusKey>(task.status);
@@ -1210,8 +1248,10 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, meI
 
   // Owner / confirmation workflow.
   const iAmOwner = task.ownerUserId === meId;
+  const iAmReviewer = task.reviewerUserId === meId;
   const awaiting = !!task.ownerDoneAt;
   const [ownerNote, setOwnerNote] = useState("");
+  const [reviewerNote, setReviewerNote] = useState("");
   const [sendBackOpen, setSendBackOpen] = useState(false);
   const [sendBackText, setSendBackText] = useState("");
   const [assignTo, setAssignTo] = useState("");
@@ -1221,6 +1261,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, meI
   }
   const ownerMarkDone = () => run(async () => { await api(`/api/tasks/${task.id}/owner-done`, { method: "POST", body: JSON.stringify({ note: ownerNote.trim() || undefined }) }); }, "Marked done, awaiting confirmation");
   const ownerPostNote = () => { if (!ownerNote.trim()) { setErr("Add a note first."); return; } run(async () => { await api(`/api/tasks/${task.id}/updates`, { method: "POST", body: JSON.stringify({ note: ownerNote }) }); }, "Note posted"); };
+  const reviewerPostNote = () => { if (!reviewerNote.trim()) { setErr("Add a note first."); return; } run(async () => { await api(`/api/tasks/${task.id}/updates`, { method: "POST", body: JSON.stringify({ note: `Review: ${reviewerNote.trim()}` }) }); }, "Review note posted"); };
   const confirmDone = () => run(async () => { await api(`/api/tasks/${task.id}/confirm`, { method: "POST", body: JSON.stringify({}) }); }, "Confirmed complete");
   const doSendBack = () => { if (!sendBackText.trim()) { setErr("Add a comment for the owner."); return; } run(async () => { await api(`/api/tasks/${task.id}/send-back`, { method: "POST", body: JSON.stringify({ comment: sendBackText }) }); }, "Sent back to owner"); };
   const assignOwner = () => { if (!assignTo) return; run(async () => { await api(`/api/tasks/${task.id}/assign`, { method: "POST", body: JSON.stringify({ userId: assignTo }) }); }, "Owner linked to account"); };
@@ -1245,6 +1286,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, meI
             <span className="k">Product</span><span className="v">{dispName(task.productId)}</span>
             <span className="k">Team</span><span className="v">{task.team || "-"}</span>
             <span className="k">Owner</span><span className="v">{task.owner || "-"}{task.ownerUserId ? <span className="hint"> · linked</span> : <span className="hint"> · not linked</span>}</span>
+            {task.reviewer ? <><span className="k">Reviewer</span><span className="v">{task.reviewer}{task.reviewerUserId ? <span className="hint"> · linked</span> : <span className="hint"> · not linked</span>}</span></> : null}
             <span className="k">Priority</span><span className="v"><PrBadge t={task} /> Level {priorityOf(task)}</span>
             <span className="k">Start</span><span className="v tnum">{fmtDate(task.startDate)}</span>
             <span className="k">Due</span><span className="v tnum" style={e.overdue ? { color: "var(--s-overdue)", fontWeight: 600 } : undefined}>{fmtDate(task.dueDate)}</span>
@@ -1304,6 +1346,16 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, meI
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button className="btn sm" onClick={ownerPostNote} disabled={busy}>Post note</button>
                 {!awaiting && task.status !== "COMPLETE" ? <button className="btn primary sm" onClick={() => setConfirmMarkDone(true)} disabled={busy}>Mark done</button> : null}
+              </div>
+              {err && <div className="err">{err}</div>}
+            </div>
+          )}
+          {reviewerActing && iAmReviewer && (
+            <div className="addupd">
+              <div className="hint" style={{ marginBottom: 8 }}>You are the reviewer on this task. Add a review note; the PM and owner can see it in the history.</div>
+              <div className="field"><label>Review note</label><textarea value={reviewerNote} onChange={(e2) => setReviewerNote(e2.target.value)} placeholder="your review feedback" rows={3} /></div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button className="btn primary sm" onClick={reviewerPostNote} disabled={busy}>Post review note</button>
               </div>
               {err && <div className="err">{err}</div>}
             </div>

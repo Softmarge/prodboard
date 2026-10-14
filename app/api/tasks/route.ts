@@ -25,6 +25,7 @@ const Create = z.object({
   productId: z.string().min(1),
   team: z.string().min(1).max(80),
   owner: z.string().min(1).max(120),
+  reviewer: z.string().max(120).optional().default(""),
   priority: z.number().int().min(1).max(3).optional().default(2),
   status: z.enum(STATUSES).default("IN_PROGRESS"),
   startDate: z.string().optional(),
@@ -65,6 +66,8 @@ export const POST = withAuth(async (user, req) => {
 
   const { resolveOwnerUserId } = await import("@/lib/owner");
   const ownerUserId = await resolveOwnerUserId(user.oid, data.owner);
+  const reviewerName = (data.reviewer || "").trim();
+  const reviewerUserId = reviewerName ? await resolveOwnerUserId(user.oid, reviewerName) : null;
 
   const task = await prisma.task.create({
     data: {
@@ -74,6 +77,8 @@ export const POST = withAuth(async (user, req) => {
       team: data.team.trim(),
       owner: data.owner.trim(),
       ownerUserId,
+      reviewer: reviewerName || null,
+      reviewerUserId,
       priority: data.priority,
       status: data.status,
       startDate: start,
@@ -94,5 +99,10 @@ export const POST = withAuth(async (user, req) => {
       organizationId: user.oid,
     },
   });
+  // Let the reviewer know they are on the task.
+  if (reviewerUserId && reviewerUserId !== user.uid) {
+    const { notifyTask } = await import("@/lib/notify");
+    await notifyTask(user.oid, { taskId: task.id, type: "review_assigned", text: `${user.name} added you as reviewer on “${task.title}”`, to: [reviewerUserId] });
+  }
   return json({ task });
 });

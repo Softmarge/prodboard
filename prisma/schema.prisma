@@ -99,6 +99,7 @@ model User {
   groups        ProductGroup[]
   highlights    TaskHighlight[]
   ownedTasks    Task[]              @relation("OwnedTasks")
+  reviewedTasks Task[]              @relation("ReviewedTasks")
   notifications Notification[]
 
   @@unique([organizationId, name])
@@ -174,6 +175,9 @@ model Task {
   ownerUser      User?        @relation("OwnedTasks", fields: [ownerUserId], references: [id], onDelete: SetNull)
   ownerDoneAt    DateTime? // owner marked their part done; awaiting PM confirmation
   ownerDoneBy    String? // display name of the owner who marked done
+  reviewer       String? // optional second reviewer (free text label as typed)
+  reviewerUserId String? // resolved reviewer account; drives My Reviews and reviewer actions
+  reviewerUser   User?        @relation("ReviewedTasks", fields: [reviewerUserId], references: [id], onDelete: SetNull)
   priority       Int          @default(2) // 1 = most important, 3 = least
   status         Status       @default(IN_PROGRESS)
   startDate      DateTime?

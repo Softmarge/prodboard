@@ -17,9 +17,11 @@ export const POST = withAuth(async (user, req, params) => {
   const task = await prisma.task.findFirst({ where: { id: params.id, organizationId: user.oid } });
   if (!task) return error("Task not found.", 404);
   // PMs/admins can do anything; the task owner may post notes and edit the blocker
-  // on their own task even if their role is Viewer, but cannot change status.
+  // on their own task even if their role is Viewer; a reviewer may post notes.
+  // Neither owner nor reviewer can change status here.
   const owns = task.ownerUserId === user.uid;
-  if (!canWrite(user) && !owns) return error("You do not have permission to update tasks.", 403);
+  const reviews = task.reviewerUserId === user.uid;
+  if (!canWrite(user) && !owns && !reviews) return error("You do not have permission to update tasks.", 403);
 
   let data;
   try {
@@ -27,7 +29,8 @@ export const POST = withAuth(async (user, req, params) => {
   } catch {
     return error("Invalid update.");
   }
-  if (!canWrite(user)) data.status = undefined; // owners cannot change status here
+  if (!canWrite(user)) data.status = undefined; // only a PM can change status here
+  if (!canWrite(user) && !owns) data.blocker = undefined; // reviewers post notes only
 
   const note = data.note?.trim() || "";
   const blockerChanged = data.blocker !== undefined && (data.blocker.trim() || "") !== (task.blocker || "");

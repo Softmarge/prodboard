@@ -33,6 +33,8 @@ export type Task = {
   ownerUserId?: string | null;
   ownerDoneAt?: string | null;
   ownerDoneBy?: string | null;
+  reviewer?: string | null;
+  reviewerUserId?: string | null;
   priority?: number;
   status: StatusKey;
   startDate: string | null;

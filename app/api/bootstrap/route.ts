@@ -33,15 +33,18 @@ export const GET = withAuth(async (user) => {
     const ownedProductIds = new Set(
       allTasks.filter((t: any) => t.ownerUserId === user.uid && t.productId).map((t: any) => t.productId),
     );
-    products = allProducts.filter((p: any) => myProductIds.has(p.id) || ownedProductIds.has(p.id));
-    tasks = allTasks.filter((t: any) => (t.productId && myProductIds.has(t.productId)) || t.ownerUserId === user.uid);
+    // A PM also sees tasks they personally own or review, even under another PM's product.
+    const reviewedProductIds = new Set(
+      allTasks.filter((t: any) => t.reviewerUserId === user.uid && t.productId).map((t: any) => t.productId),
+    );
+    products = allProducts.filter((p: any) => myProductIds.has(p.id) || ownedProductIds.has(p.id) || reviewedProductIds.has(p.id));
+    tasks = allTasks.filter((t: any) => (t.productId && myProductIds.has(t.productId)) || t.ownerUserId === user.uid || t.reviewerUserId === user.uid);
     const myTaskIds = new Set(tasks.map((t: any) => t.id));
     activity = allActivity.filter((a: any) => a.taskId && myTaskIds.has(a.taskId));
   } else if (isOwnerScoped(user)) {
-    // Task owner / reviewer without the viewer add-on: only their own tasks, plus
-    // the products those tasks belong to so names resolve. (Reviewed tasks join
-    // here once the reviewer workflow lands.)
-    tasks = allTasks.filter((t: any) => t.ownerUserId === user.uid);
+    // Task owner / reviewer without the viewer add-on: only the tasks they own or
+    // review, plus the products those tasks belong to so names resolve.
+    tasks = allTasks.filter((t: any) => t.ownerUserId === user.uid || t.reviewerUserId === user.uid);
     const myProductIds = new Set(tasks.filter((t: any) => t.productId).map((t: any) => t.productId));
     products = allProducts.filter((p: any) => myProductIds.has(p.id));
     const myTaskIds = new Set(tasks.map((t: any) => t.id));
