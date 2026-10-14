@@ -280,6 +280,9 @@ td .hldot{margin:0 auto}
 .confirmbox-inline{background:var(--warn-bg);color:var(--warn-fg);border:1px solid color-mix(in srgb,var(--warn-fg) 30%,transparent);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px}
 .confirmbox-inline .hint{color:inherit;opacity:.85}
 .claimbanner{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:13px;color:var(--muted)}
+.ownerbadge{margin-top:6px;font-size:12px;font-weight:600}
+.ownerbadge.on{color:var(--s-complete)}
+.ownerbadge.off{color:var(--muted);font-weight:500}
 .board-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
 .col.drophover{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--accent-soft)}
 .card[draggable="true"]{cursor:grab}

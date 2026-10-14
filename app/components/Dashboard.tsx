@@ -221,6 +221,13 @@ export default function Dashboard({ me }: { me: Me }) {
   const people = useMemo(() => { const s = new Set<string>(); scopedTasks.forEach((t) => t.owner && s.add(t.owner)); scopedProducts.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [scopedTasks, scopedProducts]);
   const srList = useMemo(() => { const s = new Set<string>(); scopedTasks.forEach((t) => t.serviceRequest && s.add(t.serviceRequest)); return Array.from(s).sort(); }, [scopedTasks]);
   const pmList = useMemo(() => { const s = new Set<string>(); scopedProducts.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [scopedProducts]);
+  // Owner names that resolve to a real account (a member, or an owner label already linked).
+  const registeredOwners = useMemo(() => {
+    const s = new Set<string>();
+    presence.forEach((m) => s.add(m.name.trim().toLowerCase()));
+    tasks.forEach((t) => { if (t.ownerUserId && t.owner) s.add(t.owner.trim().toLowerCase()); });
+    return s;
+  }, [presence, tasks]);
   const myProducts = useMemo(() => scopedProducts.filter((p) => (p.pm || "").trim().toLowerCase() === me.name.trim().toLowerCase()), [scopedProducts, me.name]);
   const myOwnedTasks = useMemo(() => tasks.filter((t) => t.ownerUserId === me.id), [tasks, me.id]);
   const ownsTasks = myOwnedTasks.length > 0;
@@ -414,7 +421,7 @@ export default function Dashboard({ me }: { me: Me }) {
       </main>
 
       {taskModal.open && (
-        <TaskModal editing={taskModal.editing} preProduct={taskModal.preProduct ?? null} preStatus={taskModal.preStatus ?? null} products={products} teamOptions={teamOptions} people={people} srList={srList} tasks={tasks}
+        <TaskModal editing={taskModal.editing} preProduct={taskModal.preProduct ?? null} preStatus={taskModal.preStatus ?? null} products={products} teamOptions={teamOptions} people={people} registered={registeredOwners} srList={srList} tasks={tasks}
           onClose={() => setTaskModal({ open: false, editing: null })}
           onAddTeam={async (name) => { try { const r = await api("/api/teams", { method: "POST", body: JSON.stringify({ name }) }); setTeams(r.teams); return r.teams as string[]; } catch (e) { flash((e as Error).message); return teamOptions; } }}
           onSaved={async (msg) => { setTaskModal({ open: false, editing: null }); await reloadWork(); flash(msg); }} />
@@ -952,8 +959,8 @@ function ProductDetail({ product, tasks, activity, asOf, canWrite, onClose, onOp
 }
 
 // ---------------- Task modal ----------------
-function TaskModal({ editing, preProduct, preStatus, products, teamOptions, people, srList, tasks, onClose, onAddTeam, onSaved }: {
-  editing: Task | null; preProduct: string | null; preStatus: StatusKey | null; products: Product[]; teamOptions: string[]; people: string[]; srList: string[]; tasks: Task[];
+function TaskModal({ editing, preProduct, preStatus, products, teamOptions, people, registered, srList, tasks, onClose, onAddTeam, onSaved }: {
+  editing: Task | null; preProduct: string | null; preStatus: StatusKey | null; products: Product[]; teamOptions: string[]; people: string[]; registered: Set<string>; srList: string[]; tasks: Task[];
   onClose: () => void; onAddTeam: (name: string) => Promise<string[]>; onSaved: (msg: string) => void;
 }) {
   const liveProducts = products.filter((p) => !p.decommissioned || (editing && editing.productId === p.id));
@@ -1036,9 +1043,14 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
               <select value={ownerExisting || ownerSel === "__new__" ? ownerSel : (ownerSel ? ownerSel : "")} onChange={(e) => setOwnerSel(e.target.value)}>
                 <option value="">Select owner</option>
                 {!ownerExisting && ownerSel && ownerSel !== "__new__" ? <option value={ownerSel}>{ownerSel}</option> : null}
-                {people.map((o) => <option key={o} value={o}>{o}</option>)}
+                {people.map((o) => <option key={o} value={o}>{registered.has(o.trim().toLowerCase()) ? `${o} ✓` : o}</option>)}
                 <option value="__new__">+ Add new owner</option>
               </select>
+              {ownerSel && ownerSel !== "__new__" ? (
+                registered.has(ownerSel.trim().toLowerCase())
+                  ? <div className="ownerbadge on">✓ On ProdBoard</div>
+                  : <div className="ownerbadge off">Not on ProdBoard yet · invite them so they can update it</div>
+              ) : null}
               {ownerSel === "__new__" && <div style={{ marginTop: 6 }}><input value={ownerNew} onChange={(e) => setOwnerNew(e.target.value)} placeholder="New owner name" /></div>}
             </div>
             <div className="field req"><label>Team / function</label>
