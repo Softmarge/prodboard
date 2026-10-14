@@ -89,10 +89,13 @@ model User {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
 
+  ownerAliases String[] @default([]) // owner labels on tasks that are this person (e.g. "Richard" for Richie)
+
   resets      PasswordReset[]
   nameChanges PendingNameChange[]
   groups      ProductGroup[]
   highlights  TaskHighlight[]
+  ownedTasks  Task[]              @relation("OwnedTasks")
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -162,7 +165,11 @@ model Task {
   productId      String?
   product        Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
   team           String
-  owner          String // person OR team/function (free text)
+  owner          String // person OR team/function (free text label as typed)
+  ownerUserId    String? // resolved account once linked; drives My Tasks and owner actions
+  ownerUser      User?        @relation("OwnedTasks", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  ownerDoneAt    DateTime? // owner marked their part done; awaiting PM confirmation
+  ownerDoneBy    String? // display name of the owner who marked done
   priority       Int          @default(2) // 1 = most important, 3 = least
   status         Status       @default(IN_PROGRESS)
   startDate      DateTime?

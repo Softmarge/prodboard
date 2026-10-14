@@ -29,8 +29,12 @@ export const GET = withAuth(async (user) => {
     const myProductIds = new Set(
       allProducts.filter((p: any) => (p.pm || "").trim().toLowerCase() === mine).map((p: any) => p.id),
     );
-    products = allProducts.filter((p: any) => myProductIds.has(p.id));
-    tasks = allTasks.filter((t: any) => t.productId && myProductIds.has(t.productId));
+    // A PM also sees tasks they personally own, even under another PM's product.
+    const ownedProductIds = new Set(
+      allTasks.filter((t: any) => t.ownerUserId === user.uid && t.productId).map((t: any) => t.productId),
+    );
+    products = allProducts.filter((p: any) => myProductIds.has(p.id) || ownedProductIds.has(p.id));
+    tasks = allTasks.filter((t: any) => (t.productId && myProductIds.has(t.productId)) || t.ownerUserId === user.uid);
     const myTaskIds = new Set(tasks.map((t: any) => t.id));
     activity = allActivity.filter((a: any) => a.taskId && myTaskIds.has(a.taskId));
   }

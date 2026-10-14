@@ -18,6 +18,9 @@ export type Task = {
   productId: string | null;
   team: string;
   owner: string;
+  ownerUserId?: string | null;
+  ownerDoneAt?: string | null;
+  ownerDoneBy?: string | null;
   priority?: number;
   status: StatusKey;
   startDate: string | null;

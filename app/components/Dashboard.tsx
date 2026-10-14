@@ -44,7 +44,7 @@ function hlTint(color?: string): string | undefined {
   if (!color) return undefined;
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color + "2E" : color;
 }
-type MainView = "board" | "myproducts" | "products" | "sheet" | "report" | "activity";
+type MainView = "board" | "myproducts" | "mytasks" | "products" | "sheet" | "report" | "activity";
 type BoardView = "kanban" | "list" | "grid";
 type Filters = { q: string; team: string; product: string; owner: string; sr: string; status: string; pm: string };
 const EMPTY_FILTERS: Filters = { q: "", team: "", product: "", owner: "", sr: "", status: "", pm: "" };
@@ -75,13 +75,6 @@ export default function Dashboard({ me }: { me: Me }) {
   const canWrite = me.role !== "VIEWER";
   const isAdmin = me.role === "ADMIN";
   const isPM = me.role === "PM";
-
-  // Tabs depend on role. A plain PM sees only their own, scoped views.
-  const tabDefs: [MainView, string][] = isPM
-    ? [["board", "My Main Board"], ["myproducts", "My Products"], ["activity", "My Activity"]]
-    : isAdmin
-      ? [["board", "Main Board"], ["myproducts", "My Products"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]]
-      : [["board", "Main Board"], ["products", "Products"], ["report", "Weekly report"], ["sheet", "Sheet"]];
 
   const [products, setProducts] = useState<Product[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -132,6 +125,11 @@ export default function Dashboard({ me }: { me: Me }) {
   const [presence, setPresence] = useState<PresenceMember[]>([]);
   const [presenceOpen, setPresenceOpen] = useState(false);
 
+  // Owner persona: My Tasks + claim-your-tasks reconciliation.
+  const [claimable, setClaimable] = useState<{ id: string; title: string; owner: string; productId: string | null }[]>([]);
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [myTaskView, setMyTaskView] = useState<"list" | "grid">(() => ls("pdt_mtview", "list") as "list" | "grid");
+
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
   const flash = useCallback((m: string) => {
     setToast(m); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(""), 2200);
@@ -154,6 +152,7 @@ export default function Dashboard({ me }: { me: Me }) {
     setHighlights(d.highlights || {});
     if (d.highlightPresets) setHlPresets(d.highlightPresets);
     if (d.organization) setOrgName(d.organization.name);
+    api("/api/me/claimable").then((c) => setClaimable(c.tasks || [])).catch(() => {});
     // Initialize the Main/Groups selection once, from the remembered choice.
     if (!groupInit.current) {
       groupInit.current = true;
@@ -223,6 +222,20 @@ export default function Dashboard({ me }: { me: Me }) {
   const srList = useMemo(() => { const s = new Set<string>(); scopedTasks.forEach((t) => t.serviceRequest && s.add(t.serviceRequest)); return Array.from(s).sort(); }, [scopedTasks]);
   const pmList = useMemo(() => { const s = new Set<string>(); scopedProducts.forEach((p) => p.pm && s.add(p.pm)); return Array.from(s).sort(); }, [scopedProducts]);
   const myProducts = useMemo(() => scopedProducts.filter((p) => (p.pm || "").trim().toLowerCase() === me.name.trim().toLowerCase()), [scopedProducts, me.name]);
+  const myOwnedTasks = useMemo(() => tasks.filter((t) => t.ownerUserId === me.id), [tasks, me.id]);
+  const ownsTasks = myOwnedTasks.length > 0;
+  // Tabs depend on role; anyone who owns tasks (or has tasks to claim) also gets My Tasks.
+  const tabDefs = useMemo<[MainView, string][]>(() => {
+    const base: [MainView, string][] = isPM
+      ? [["board", "My Main Board"], ["myproducts", "My Products"], ["activity", "My Activity"]]
+      : isAdmin
+        ? [["board", "Main Board"], ["myproducts", "My Products"], ["products", "Products"], ["sheet", "Sheet"], ["report", "Weekly report"], ["activity", "Activity"]]
+        : [["board", "Main Board"], ["products", "Products"], ["report", "Weekly report"], ["sheet", "Sheet"]];
+    if (ownsTasks || claimable.length > 0) {
+      base.splice(1, 0, ["mytasks", "My Tasks"]);
+    }
+    return base;
+  }, [isPM, isAdmin, ownsTasks, claimable.length]);
   const teamOptions = useMemo(() => { const s = new Set<string>(); teams.forEach((t) => s.add(t)); tasks.forEach((t) => t.team && s.add(t.team)); return Array.from(s); }, [teams, tasks]);
 
   const dispName = useCallback((id: string | null) => productDisplay(id ? productById[id] : null), [productById]);
@@ -394,6 +407,7 @@ export default function Dashboard({ me }: { me: Me }) {
           : productBoardId ? <ProductBoard product={productById[productBoardId]} tasks={tasks.filter((t) => t.productId === productBoardId)} asOf={asOf} activity={activity} pbView={pbView} setPbView={(v) => { setPbView(v); lsSet("pdt_pbview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onBack={() => setProductBoardId(null)} onOpenTask={setDrawerTaskId} onAdd={() => setTaskModal({ open: true, editing: null, preProduct: productBoardId })} onMove={moveStatus} onHlPresets={() => setHlPresetsOpen(true)} />
           : view === "board" ? <Board tasks={visible} allCount={scopedTasks.length} asOf={asOf} activity={activity} boardView={boardView} setBoardView={(v) => { setBoardView(v); lsSet("pdt_bview", v); }} boardSort={boardSort} setBoardSort={(s) => { setBoardSort(s); lsSet("pdt_bsort", s); }} cmpTasks={cmpTasks} dispName={dispName} canWrite={canWrite} onOpenTask={setDrawerTaskId} onMove={moveStatus} onHlPresets={() => setHlPresetsOpen(true)} />
           : view === "products" || view === "myproducts" ? <ProductsView products={view === "myproducts" ? myProducts : scopedProducts} tasks={scopedTasks} layout={productLayout} setLayout={(l) => { setProductLayout(l); lsSet("pdt_plo", l); }} sort={productSort} setSort={(s) => { setProductSort(s); lsSet("pdt_psort", s); }} query={productQuery} setQuery={setProductQuery} showDecom={showDecom} setShowDecom={setShowDecom} canWrite={canWrite} isAdmin={isAdmin} onCreate={() => setProdCreateOpen(true)} onImport={() => setImportOpen(true)} onSettings={setProdSettings} onDetail={setDetailProduct} onAdd={(pid) => setTaskModal({ open: true, editing: null, preProduct: pid })} onDecom={toggleDecom} />
+          : view === "mytasks" ? <MyTasksView tasks={visible.filter((t) => t.ownerUserId === me.id)} activity={activity} asOf={asOf} cmpTasks={cmpTasks} dispName={dispName} tview={myTaskView} setTview={(v) => { setMyTaskView(v); lsSet("pdt_mtview", v); }} onOpenTask={setDrawerTaskId} claimableCount={claimable.length} onClaim={() => setClaimOpen(true)} />
           : view === "sheet" ? <Sheet tasks={visible} asOf={asOf} activity={activity} dispName={dispName} onOpenTask={setDrawerTaskId} />
           : view === "report" ? <Report tasks={scopedTasks} activity={scopedActivity} dispName={dispName} range={range} setRange={setRange} eventText={eventText} />
           : <Feed activity={scopedActivity} tasks={scopedTasks} />}
@@ -407,7 +421,7 @@ export default function Dashboard({ me }: { me: Me }) {
       )}
 
       {drawerTask && (
-        <TaskDrawer task={drawerTask} activity={activity} dispName={dispName} asOf={asOf} canWrite={canWrite}
+        <TaskDrawer task={drawerTask} activity={activity} dispName={dispName} asOf={asOf} canWrite={canWrite} meId={me.id} members={presence}
           onClose={() => setDrawerTaskId(null)}
           onEdit={(t) => { setDrawerTaskId(null); setTaskModal({ open: true, editing: t }); }}
           onPosted={async (msg) => { await reloadWork(); flash(msg); }} />
@@ -444,6 +458,8 @@ export default function Dashboard({ me }: { me: Me }) {
       {groupsModalOpen && <GroupsModal groups={groups} products={products} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
 
       {presenceOpen && <PresencePanel members={presence} meId={me.id} onClose={() => setPresenceOpen(false)} />}
+
+      {claimOpen && <ClaimModal productById={productById} onClose={() => setClaimOpen(false)} flash={flash} onClaimed={async () => { await reloadWork(); api("/api/me/claimable").then((c) => setClaimable(c.tasks || [])).catch(() => {}); }} />}
 
       {hlMenu && <HighlightMenu taskId={hlMenu.taskId} x={hlMenu.x} y={hlMenu.y} presets={hlPresets} current={highlights[hlMenu.taskId]} onPick={(c) => { setHighlight(hlMenu.taskId, c); setHlMenu(null); }} onEditPresets={() => { setHlMenu(null); setHlPresetsOpen(true); }} onClose={() => setHlMenu(null)} />}
 
@@ -684,6 +700,78 @@ function Sheet({ tasks, asOf, activity, dispName, onOpenTask }: { tasks: Task[];
         </tbody>
       </table>
     </div>
+  );
+}
+
+// ---------------- My Tasks (owner persona) ----------------
+function MyTasksView({ tasks, activity, asOf, cmpTasks, dispName, tview, setTview, onOpenTask, claimableCount, onClaim }: { tasks: Task[]; activity: Activity[]; asOf: string; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; tview: "list" | "grid"; setTview: (v: "list" | "grid") => void; onOpenTask: (id: string) => void; claimableCount: number; onClaim: () => void; }) {
+  return (
+    <>
+      <div className="pbbar">
+        <div className="segmented sm">
+          <button aria-pressed={tview === "list"} onClick={() => setTview("list")}>List</button>
+          <button aria-pressed={tview === "grid"} onClick={() => setTview("grid")}>Card grid</button>
+        </div>
+        <span className="grow" />
+        {claimableCount > 0 ? <button className="btn ghost sm" onClick={onClaim}>Claim tasks ({claimableCount})</button> : null}
+      </div>
+      {claimableCount > 0 ? <div className="claimbanner">Some tasks may be assigned to you under a different name. <button className="linklike" onClick={onClaim}>Review and claim them</button>.</div> : null}
+      {!tasks.length ? (
+        <div className="empty"><h3>No tasks linked to you yet</h3><p>{claimableCount > 0 ? "Claim the tasks assigned to you to see them here." : "Tasks you own will appear here once a PM assigns them to you."}</p></div>
+      ) : tview === "grid" ? (
+        <GridBoard tasks={tasks} activity={activity} asOf={asOf} cmpTasks={cmpTasks} dispName={dispName} onOpenTask={onOpenTask} />
+      ) : (
+        <ListBoard tasks={tasks} activity={activity} asOf={asOf} cmpTasks={cmpTasks} dispName={dispName} onOpenTask={onOpenTask} />
+      )}
+    </>
+  );
+}
+
+function ClaimModal({ productById, onClose, flash, onClaimed }: { productById: Record<string, Product>; onClose: () => void; flash: (m: string) => void; onClaimed: () => Promise<void> | void; }) {
+  const [rows, setRows] = useState<{ id: string; title: string; owner: string; productId: string | null }[]>([]);
+  const [all, setAll] = useState(false);
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const load = useCallback(async (showAll: boolean) => {
+    setLoading(true);
+    try { const d = await api(`/api/me/claimable${showAll ? "?all=1" : ""}`); setRows(d.tasks || []); }
+    catch (e) { flash((e as Error).message); } finally { setLoading(false); }
+  }, [flash]);
+  useEffect(() => { load(all); }, [all, load]);
+  async function claim(id: string) {
+    setBusy(id);
+    try { await api(`/api/tasks/${id}/claim`, { method: "POST" }); setRows((r) => r.filter((x) => x.id !== id)); await onClaimed(); flash("Task claimed"); }
+    catch (e) { flash((e as Error).message); } finally { setBusy(""); }
+  }
+  const list = q.trim() ? rows.filter((t) => `${t.owner} ${t.title}`.toLowerCase().includes(q.toLowerCase())) : rows;
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Claim your tasks</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          <p className="lead" style={{ marginBottom: 12 }}>Tasks assigned to you by name that are not yet linked to your account. Claim the ones that are yours; the name is remembered so future tasks link automatically.</p>
+          <input type="search" placeholder="Search by name or task…" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 8 }} />
+          <label className="chkline" style={{ marginBottom: 10 }}><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Show all unlinked tasks (find a name that does not match)</label>
+          {loading ? <div className="hint">Loading…</div> : !list.length ? <div className="hint">{all ? "No unlinked tasks." : "No likely matches. Tick “Show all” to search every unlinked task."}</div> : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 340, overflowY: "auto" }}>
+              {list.map((t) => (
+                <div className="prow" key={t.id}>
+                  <div className="prow-top">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600 }}>{t.title}</div>
+                      <div className="hint">Owner label: {t.owner || "-"}{t.productId && productById[t.productId] ? ` · ${productById[t.productId].name}` : ""}</div>
+                    </div>
+                    <button className="btn primary sm" onClick={() => claim(t.id)} disabled={busy === t.id}>{busy === t.id ? "Claiming…" : "This is me"}</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -979,7 +1067,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
 }
 
 // ---------------- Task drawer ----------------
-function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit, onPosted }: { task: Task; activity: Activity[]; dispName: (id: string | null) => string; asOf: string; canWrite: boolean; onClose: () => void; onEdit: (t: Task) => void; onPosted: (msg: string) => void; }) {
+function TaskDrawer({ task, activity, dispName, asOf, canWrite, meId, members, onClose, onEdit, onPosted }: { task: Task; activity: Activity[]; dispName: (id: string | null) => string; asOf: string; canWrite: boolean; meId: string; members: PresenceMember[]; onClose: () => void; onEdit: (t: Task) => void; onPosted: (msg: string) => void; }) {
   const e = effectiveStatus(task, asOf || null, activity);
   const hist = activity.filter((a) => a.taskId === task.id).sort((a, b) => +new Date(b.ts) - +new Date(a.ts));
   const [status, setStatus] = useState<StatusKey>(task.status);
@@ -1020,13 +1108,31 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
       onPosted("Update saved"); onClose();
     } catch (ex) { setErr((ex as Error).message); setBusy(false); setConfirmExit(false); }
   }
+
+  // Owner / confirmation workflow.
+  const iAmOwner = task.ownerUserId === meId;
+  const awaiting = !!task.ownerDoneAt;
+  const [ownerNote, setOwnerNote] = useState("");
+  const [sendBackOpen, setSendBackOpen] = useState(false);
+  const [sendBackText, setSendBackText] = useState("");
+  const [assignTo, setAssignTo] = useState("");
+  async function run(fn: () => Promise<void>, okMsg: string) {
+    setErr(""); setBusy(true);
+    try { await fn(); onPosted(okMsg); onClose(); } catch (ex) { setErr((ex as Error).message); setBusy(false); }
+  }
+  const ownerMarkDone = () => run(async () => { await api(`/api/tasks/${task.id}/owner-done`, { method: "POST", body: JSON.stringify({ note: ownerNote.trim() || undefined }) }); }, "Marked done, awaiting confirmation");
+  const ownerPostNote = () => { if (!ownerNote.trim()) { setErr("Add a note first."); return; } run(async () => { await api(`/api/tasks/${task.id}/updates`, { method: "POST", body: JSON.stringify({ note: ownerNote }) }); }, "Note posted"); };
+  const confirmDone = () => run(async () => { await api(`/api/tasks/${task.id}/confirm`, { method: "POST", body: JSON.stringify({}) }); }, "Confirmed complete");
+  const doSendBack = () => { if (!sendBackText.trim()) { setErr("Add a comment for the owner."); return; } run(async () => { await api(`/api/tasks/${task.id}/send-back`, { method: "POST", body: JSON.stringify({ comment: sendBackText }) }); }, "Sent back to owner"); };
+  const assignOwner = () => { if (!assignTo) return; run(async () => { await api(`/api/tasks/${task.id}/assign`, { method: "POST", body: JSON.stringify({ userId: assignTo }) }); }, "Owner linked to account"); };
+
   return (
     <>
       <div className="scrim" onClick={requestClose} />
       <aside className="drawer open">
         <div className="dhead"><h2>{task.title}</h2><button className="iconbtn" onClick={requestClose} aria-label="Close">✕</button></div>
         <div className="dbody">
-          <div style={{ marginBottom: 12 }}><Chip status={e.status} />{asOf ? <span className="hint"> as of {fmtDate(asOf + "T12:00:00")}</span> : null}</div>
+          <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}><Chip status={e.status} />{awaiting ? <span className="awaitpill">Awaiting confirmation{task.ownerDoneBy ? ` · ${task.ownerDoneBy}` : ""}</span> : null}{asOf ? <span className="hint">as of {fmtDate(asOf + "T12:00:00")}</span> : null}</div>
           {canWrite ? (
             <div className="ctxbox">
               <div className="ctxlabel">Context <span className="hint" style={{ textTransform: "none", letterSpacing: 0 }}>· optional, for stakeholders</span></div>
@@ -1039,7 +1145,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
           <div className="kv">
             <span className="k">Product</span><span className="v">{dispName(task.productId)}</span>
             <span className="k">Team</span><span className="v">{task.team || "-"}</span>
-            <span className="k">Owner</span><span className="v">{task.owner || "-"}</span>
+            <span className="k">Owner</span><span className="v">{task.owner || "-"}{task.ownerUserId ? <span className="hint"> · linked</span> : <span className="hint"> · not linked</span>}</span>
             <span className="k">Priority</span><span className="v"><PrBadge t={task} /> Level {priorityOf(task)}</span>
             <span className="k">Start</span><span className="v tnum">{fmtDate(task.startDate)}</span>
             <span className="k">Due</span><span className="v tnum" style={e.overdue ? { color: "var(--s-overdue)", fontWeight: 600 } : undefined}>{fmtDate(task.dueDate)}</span>
@@ -1047,6 +1153,40 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
             {task.blocker ? <><span className="k">Blocker</span><span className="v" style={{ color: "var(--s-overdue)" }}>{task.blocker}</span></> : null}
             <span className="k">Created by</span><span className="v">{task.createdBy || "-"} <span className="hint">{task.createdAt ? fmtTs(task.createdAt) : ""}</span></span>
           </div>
+          {canWrite && awaiting && (
+            <div className="confirmbox-inline">
+              <div style={{ fontWeight: 600, marginBottom: 2 }}>Owner marked this done</div>
+              <div className="hint" style={{ marginBottom: 8 }}>{task.ownerDoneBy || "The owner"} is waiting for your confirmation.</div>
+              {!sendBackOpen ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button className="btn primary sm" onClick={confirmDone} disabled={busy}>Confirm complete</button>
+                  <button className="btn ghost sm" onClick={() => setSendBackOpen(true)} disabled={busy}>Send back</button>
+                </div>
+              ) : (
+                <div className="field" style={{ margin: 0 }}>
+                  <label>Comment for the owner (required)</label>
+                  <textarea value={sendBackText} onChange={(e2) => setSendBackText(e2.target.value)} placeholder="what still needs doing" rows={2} />
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
+                    <button className="btn ghost sm" onClick={() => { setSendBackOpen(false); setSendBackText(""); }}>Cancel</button>
+                    <button className="btn primary sm" onClick={doSendBack} disabled={busy}>Send back</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {canWrite && !task.ownerUserId && members.length > 0 && (
+            <div className="field">
+              <label>Link owner to an account</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <select value={assignTo} onChange={(e2) => setAssignTo(e2.target.value)} style={{ flex: 1 }}>
+                  <option value="">Choose a member…</option>
+                  {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <button className="btn sm" onClick={assignOwner} disabled={busy || !assignTo}>Link</button>
+              </div>
+              <div className="hint" style={{ marginTop: 4 }}>Owner typed as “{task.owner}”. Link it to the right account so they get this in My Tasks.</div>
+            </div>
+          )}
           {canWrite && (
             <div className="addupd">
               <div className="field"><label>Change status</label><select value={status} onChange={(e2) => setStatus(e2.target.value as StatusKey)}>{EDIT_STATUSES.map((s) => <option key={s} value={s}>{statusMeta(s).label}</option>)}</select>
@@ -1055,6 +1195,17 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, onClose, onEdit,
               <div className={status === "BLOCKED" ? "field req" : "field"}><label>Blocker{status === "BLOCKED" ? " (required)" : " (optional)"}</label><input value={blocker} onChange={(e2) => setBlocker(e2.target.value)} placeholder={status === "BLOCKED" ? "why it is blocked and what it is waiting on" : "leave blank if not blocked"} />
                 {status === "BLOCKED" && !blocker.trim() ? <div className="hint" style={{ color: "var(--s-overdue)", marginTop: 4 }}>A blocked task needs a reason. Add the blocker to post this.</div> : null}</div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button className="btn sm" onClick={() => onEdit(task)}>Edit details</button><button className="btn primary sm" onClick={post} disabled={busy}>{busy ? "Posting…" : "Post update"}</button></div>
+              {err && <div className="err">{err}</div>}
+            </div>
+          )}
+          {!canWrite && iAmOwner && (
+            <div className="addupd">
+              {awaiting ? <div className="hint" style={{ marginBottom: 8 }}>You marked this done. Awaiting PM confirmation.</div> : null}
+              <div className="field"><label>Progress note</label><textarea value={ownerNote} onChange={(e2) => setOwnerNote(e2.target.value)} placeholder="what you did; evidence it is moving" rows={3} /></div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button className="btn sm" onClick={ownerPostNote} disabled={busy}>Post note</button>
+                {!awaiting && task.status !== "COMPLETE" ? <button className="btn primary sm" onClick={ownerMarkDone} disabled={busy}>Mark done</button> : null}
+              </div>
               {err && <div className="err">{err}</div>}
             </div>
           )}

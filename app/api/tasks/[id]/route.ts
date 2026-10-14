@@ -63,7 +63,11 @@ export const PATCH = withAuth(async (user, req, params) => {
   if (data.context !== undefined) patch.context = data.context.trim() || null;
   if (data.productId !== undefined) patch.productId = data.productId;
   if (data.team !== undefined) patch.team = data.team.trim();
-  if (data.owner !== undefined) patch.owner = data.owner.trim();
+  if (data.owner !== undefined) {
+    patch.owner = data.owner.trim();
+    const { resolveOwnerUserId } = await import("@/lib/owner");
+    patch.ownerUserId = await resolveOwnerUserId(user.oid, data.owner);
+  }
   if (data.priority !== undefined) patch.priority = data.priority;
   if (data.status !== undefined) patch.status = data.status;
   if (data.startDate !== undefined) patch.startDate = toDate(data.startDate);

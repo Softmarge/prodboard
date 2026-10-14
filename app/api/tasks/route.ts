@@ -63,6 +63,9 @@ export const POST = withAuth(async (user, req) => {
   });
   if (!product) return error("Pick a product in your organization.", 400);
 
+  const { resolveOwnerUserId } = await import("@/lib/owner");
+  const ownerUserId = await resolveOwnerUserId(user.oid, data.owner);
+
   const task = await prisma.task.create({
     data: {
       title: data.title.trim(),
@@ -70,6 +73,7 @@ export const POST = withAuth(async (user, req) => {
       productId: product.id,
       team: data.team.trim(),
       owner: data.owner.trim(),
+      ownerUserId,
       priority: data.priority,
       status: data.status,
       startDate: start,
