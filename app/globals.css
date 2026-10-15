@@ -1,9 +1,13 @@
-/* ProdBoard, design tokens ported from the MVP board.
-   Cool slate neutrals + single teal accent; status uses its own semantic hues. */
+/* ProdBoard, design tokens aligned to the brand logo:
+   navy #092950 + teal #00A9B2 + amber #F3AD0D over cool slate neutrals.
+   --accent is a darkened brand teal so white text on it stays legible;
+   --accent-soft tints use the bright brand teal. Status keeps its own hues. */
 :root{
   --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eef1f5; --surface-3:#e6eaf0;
-  --fg:#192230; --muted:#5a6678; --faint:#8a94a4; --border:#dce1e8; --border-strong:#c6cdd8;
-  --accent:#0f766e; --accent-fg:#ffffff; --accent-soft:#0f766e22;
+  --fg:#13223a; --muted:#5a6678; --faint:#8a94a4; --border:#dce1e8; --border-strong:#c6cdd8;
+  --brand:#092950; --brand-ink:#ffffff;
+  --accent:#0e7c84; --accent-fg:#ffffff; --accent-soft:#00a9b21f;
+  --amber:#f3ad0d; --amber-soft:#f3ad0d26; --amber-ink:#13223a;
   --s-notstarted:#64748b; --s-progress:#2563eb; --s-review:#b45309; --s-complete:#15803d; --s-overdue:#dc2626; --s-blocked:#7c3aed;
   --warn-bg:#fef3c7; --warn-fg:#92400e;
   --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
@@ -16,7 +20,9 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0d1319; --surface:#151d26; --surface-2:#1b2631; --surface-3:#22303c;
   --fg:#e8edf3; --muted:#9aa7b6; --faint:#6b7889; --border:#28333f; --border-strong:#36454f;
-  --accent:#2dd4bf; --accent-fg:#06221f; --accent-soft:#2dd4bf22;
+  --brand:#16436f; --brand-ink:#ffffff;
+  --accent:#22c4ce; --accent-fg:#06222b; --accent-soft:#22c4ce24;
+  --amber:#f8c43f; --amber-soft:#f8c43f26; --amber-ink:#13223a;
   --s-notstarted:#94a3b8; --s-progress:#60a5fa; --s-review:#fbbf24; --s-complete:#4ade80; --s-overdue:#f87171; --s-blocked:#a78bfa;
   --warn-bg:#3a2d08; --warn-fg:#fcd34d;
   --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 12px 34px rgba(0,0,0,.55);
@@ -25,7 +31,9 @@
 :root[data-theme="dark"]{
   --bg:#0d1319; --surface:#151d26; --surface-2:#1b2631; --surface-3:#22303c;
   --fg:#e8edf3; --muted:#9aa7b6; --faint:#6b7889; --border:#28333f; --border-strong:#36454f;
-  --accent:#2dd4bf; --accent-fg:#06221f; --accent-soft:#2dd4bf22;
+  --brand:#16436f; --brand-ink:#ffffff;
+  --accent:#22c4ce; --accent-fg:#06222b; --accent-soft:#22c4ce24;
+  --amber:#f8c43f; --amber-soft:#f8c43f26; --amber-ink:#13223a;
   --s-notstarted:#94a3b8; --s-progress:#60a5fa; --s-review:#fbbf24; --s-complete:#4ade80; --s-overdue:#f87171; --s-blocked:#a78bfa;
   --warn-bg:#3a2d08; --warn-fg:#fcd34d;
   --shadow:0 1px 2px rgba(0,0,0,.4); --shadow-lg:0 12px 34px rgba(0,0,0,.55);
@@ -46,7 +54,7 @@ select,input,textarea{font-family:inherit;font-size:inherit;color:var(--fg)}
 /* ---- brand bar ---- */
 .brand{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:var(--shadow)}
 .logo{display:flex;align-items:center;gap:9px;min-width:0}
-.logo .mk{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#000));display:grid;place-items:center;color:var(--accent-fg);font-weight:700;font-size:13px;flex:none}
+.logo .mk{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--brand),var(--accent));display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px;flex:none}
 .logo .nm{font-weight:600;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .logo .sub{color:var(--faint);font-size:11px;font-weight:500;white-space:nowrap}
 .brand .spacer{flex:1}
@@ -232,7 +240,7 @@ table.sheet .due.late{color:var(--s-overdue);font-weight:600}
 .fa-card{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:12px 14px;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--surface-2)}
 .fa-main{min-width:0}
 .fa-title{display:flex;align-items:center;gap:8px;font-weight:600}
-.fa-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--accent-fg);background:var(--accent);padding:1px 7px;border-radius:999px}
+.fa-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--amber-ink);background:var(--amber);padding:1px 7px;border-radius:999px}
 .fa-body{color:var(--muted);font-size:13px;margin-top:4px;white-space:pre-wrap}
 .fa-link{display:inline-block;margin-top:6px;font-size:13px;font-weight:600;color:var(--accent)}
 .chkline{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
