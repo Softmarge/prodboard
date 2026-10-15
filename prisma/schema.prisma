@@ -227,6 +227,7 @@ model Task {
   reviewer       String? // optional second reviewer (free text label as typed)
   reviewerUserId String? // resolved reviewer account; drives My Reviews and reviewer actions
   reviewerUser   User?        @relation("ReviewedTasks", fields: [reviewerUserId], references: [id], onDelete: SetNull)
+  pending        Boolean      @default(false) // created by an owner/reviewer on a product new to them; awaits PM approval before others can see it
   priority       Int          @default(2) // 1 = most important, 3 = least
   status         Status       @default(IN_PROGRESS)
   startDate      DateTime?

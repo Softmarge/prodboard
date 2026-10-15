@@ -28,9 +28,13 @@ function toDate(s?: string): Date | null {
 }
 
 export const PATCH = withAuth(async (user, req, params) => {
-  if (!canWrite(user)) return error("You do not have permission to edit tasks.", 403);
   const existing = await prisma.task.findFirst({ where: { id: params.id, organizationId: user.oid } });
   if (!existing) return error("Task not found.", 404);
+  // PMs/admins edit any task. The creator of a task may also edit the one they
+  // authored (e.g. to fix a wrong product), but not change its status here.
+  const selfCreated = existing.ownerUserId === user.uid && (existing.createdBy || "") === user.name;
+  const ownerEdit = !canWrite(user) && selfCreated;
+  if (!canWrite(user) && !ownerEdit) return error("You do not have permission to edit tasks.", 403);
 
   let data;
   try {
@@ -38,6 +42,9 @@ export const PATCH = withAuth(async (user, req, params) => {
   } catch {
     return error("Invalid task update.");
   }
+
+  // An owner editing their own task cannot change the owner or the status here.
+  if (ownerEdit) { data.owner = undefined; data.status = undefined; }
 
   if (data.productId) {
     const product = await prisma.product.findFirst({
@@ -84,6 +91,18 @@ export const PATCH = withAuth(async (user, req, params) => {
   if (data.serviceRequest !== undefined) patch.serviceRequest = data.serviceRequest.trim() || null;
   if (data.blocker !== undefined) patch.blocker = data.blocker.trim() || null;
 
+  // When the creator edits their own task, recompute pending by whether they
+  // already work on the resulting product: an involved product goes live, a new
+  // one needs a PM's approval again.
+  let ownerPending: boolean | undefined;
+  if (ownerEdit) {
+    const nextProductId = (data.productId ?? existing.productId) as string | null;
+    const mine = await prisma.task.findMany({ where: { organizationId: user.oid, OR: [{ ownerUserId: user.uid }, { reviewerUserId: user.uid }], NOT: { id: existing.id } }, select: { productId: true } });
+    const involved = new Set(mine.map((t: any) => t.productId).filter(Boolean));
+    ownerPending = !(nextProductId && involved.has(nextProductId));
+    patch.pending = ownerPending;
+  }
+
   const task = await prisma.task.update({ where: { id: existing.id }, data: patch });
 
   const statusChanged = data.status !== undefined && data.status !== existing.status;
@@ -112,6 +131,13 @@ export const PATCH = withAuth(async (user, req, params) => {
     if (enteredReview && effectiveReviewerId !== user.uid) {
       await notifyTask(user.oid, { taskId: task.id, type: "review_ready", text: `“${task.title}” is ready for your review`, to: [effectiveReviewerId], excludeUserId: user.uid });
     }
+  }
+
+  // When the creator resubmits a still-pending edit, re-prompt the PM to approve.
+  if (ownerEdit && ownerPending) {
+    const { notifyTask } = await import("@/lib/notify");
+    const prod = task.productId ? await prisma.product.findUnique({ where: { id: task.productId }, select: { name: true } }) : null;
+    await notifyTask(user.oid, { taskId: task.id, type: "approval_request", text: `${user.name} updated “${task.title}”${prod ? ` under ${prod.name}` : ""}, awaiting your approval`, includePm: true, includeAdmins: true, excludeUserId: user.uid });
   }
   return json({ task });
 });

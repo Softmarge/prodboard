@@ -43,6 +43,11 @@ export function isOwnerScoped(user: SessionUser): boolean {
   return !canViewAll(user) && !canManageScoped(user);
 }
 
+/** Holds a task-owner or reviewer persona (by role or granted capability). */
+export function isOwnerOrReviewer(user: SessionUser): boolean {
+  return user.role === "TASK_OWNER" || user.role === "REVIEWER" || user.capOwner === true || user.capReviewer === true;
+}
+
 /** Admin-only actions (manage users, reassign products, delete). */
 export function isAdmin(user: SessionUser): boolean {
   return user.role === "ADMIN";

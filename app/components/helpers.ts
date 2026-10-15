@@ -35,6 +35,7 @@ export type Task = {
   ownerDoneBy?: string | null;
   reviewer?: string | null;
   reviewerUserId?: string | null;
+  pending?: boolean;
   priority?: number;
   status: StatusKey;
   startDate: string | null;

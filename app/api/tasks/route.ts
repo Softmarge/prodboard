@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { withAuth, json, error, canWrite } from "@/lib/api";
+import { withAuth, json, error, canWrite, isOwnerOrReviewer } from "@/lib/api";
 import { isScopedPM, managedProductIds } from "@/lib/scope";
 
 export const runtime = "nodejs";
@@ -41,7 +41,18 @@ function toDate(s?: string): Date | null {
 }
 
 export const POST = withAuth(async (user, req) => {
-  if (!canWrite(user)) return error("You do not have permission to create tasks.", 403);
+  // PMs/admins create freely. A task owner / reviewer may also create a task they
+  // own: on a product they already work on it goes live; on a product new to them
+  // it is created pending a PM's approval.
+  const privileged = canWrite(user);
+  let mayCreate = privileged || isOwnerOrReviewer(user);
+  if (!mayCreate) {
+    // A viewer who nonetheless owns or reviews a task counts as an owner here.
+    const cnt = await prisma.task.count({ where: { organizationId: user.oid, OR: [{ ownerUserId: user.uid }, { reviewerUserId: user.uid }] } });
+    mayCreate = cnt > 0;
+  }
+  if (!mayCreate) return error("You do not have permission to create tasks.", 403);
+
   let data;
   try {
     data = Create.parse(await req.json());
@@ -65,9 +76,21 @@ export const POST = withAuth(async (user, req) => {
   if (!product) return error("Pick a product in your organization.", 400);
 
   const { resolveOwnerUserId } = await import("@/lib/owner");
-  const ownerUserId = await resolveOwnerUserId(user.oid, data.owner);
   const reviewerName = (data.reviewer || "").trim();
   const reviewerUserId = reviewerName ? await resolveOwnerUserId(user.oid, reviewerName) : null;
+
+  // Owner/reviewer self-create: lock the owner to themselves; decide pending by
+  // whether they already work on this product (own or review a task on it).
+  let ownerName = data.owner.trim();
+  let ownerUserId = await resolveOwnerUserId(user.oid, data.owner);
+  let pending = false;
+  if (!privileged) {
+    ownerName = user.name;
+    ownerUserId = user.uid;
+    const mine = await prisma.task.findMany({ where: { organizationId: user.oid, OR: [{ ownerUserId: user.uid }, { reviewerUserId: user.uid }] }, select: { productId: true } });
+    const involved = new Set(mine.map((t: any) => t.productId).filter(Boolean));
+    pending = !involved.has(product.id);
+  }
 
   const task = await prisma.task.create({
     data: {
@@ -75,7 +98,7 @@ export const POST = withAuth(async (user, req) => {
       context: data.context?.trim() || null,
       productId: product.id,
       team: data.team.trim(),
-      owner: data.owner.trim(),
+      owner: ownerName,
       ownerUserId,
       reviewer: reviewerName || null,
       reviewerUserId,
@@ -85,6 +108,7 @@ export const POST = withAuth(async (user, req) => {
       dueDate: due,
       serviceRequest: data.serviceRequest?.trim() || null,
       blocker: data.blocker?.trim() || null,
+      pending,
       createdBy: user.name,
       organizationId: user.oid,
     },
@@ -99,10 +123,19 @@ export const POST = withAuth(async (user, req) => {
       organizationId: user.oid,
     },
   });
-  // Let the reviewer know they are on the task.
-  if (reviewerUserId && reviewerUserId !== user.uid) {
-    const { notifyTask } = await import("@/lib/notify");
-    await notifyTask(user.oid, { taskId: task.id, type: "review_assigned", text: `${user.name} added you as reviewer on “${task.title}”`, to: [reviewerUserId] });
+
+  const { notifyTask } = await import("@/lib/notify");
+  if (!privileged && pending) {
+    // Awaiting approval: tell the product's PM and the admins, not the reviewer yet.
+    await notifyTask(user.oid, { taskId: task.id, type: "approval_request", text: `${user.name} proposed a new task “${task.title}” under ${product.name}, awaiting your approval`, includePm: true, includeAdmins: true, excludeUserId: user.uid });
+  } else {
+    if (!privileged) {
+      await notifyTask(user.oid, { taskId: task.id, type: "owner_created", text: `${user.name} added a task “${task.title}” under ${product.name}`, includePm: true, excludeUserId: user.uid });
+    }
+    // Let the reviewer know they are on the task (only once it is visible).
+    if (reviewerUserId && reviewerUserId !== user.uid) {
+      await notifyTask(user.oid, { taskId: task.id, type: "review_assigned", text: `${user.name} added you as reviewer on “${task.title}”`, to: [reviewerUserId] });
+    }
   }
   return json({ task });
 });

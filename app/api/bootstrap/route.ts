@@ -53,6 +53,20 @@ export const GET = withAuth(async (user) => {
     activity = allActivity.filter((a: any) => a.taskId && myTaskIds.has(a.taskId));
   }
 
+  // Hide pending (unapproved, owner-created) tasks from everyone except an admin,
+  // the managing PM of the product, or the creator/owner. Activity for tasks the
+  // user cannot see is dropped too.
+  const isAdminU = user.role === "ADMIN";
+  const mineName = user.name.trim().toLowerCase();
+  tasks = tasks.filter((t: any) => {
+    if (!t.pending) return true;
+    if (isAdminU || t.ownerUserId === user.uid) return true;
+    const p = allProducts.find((pp: any) => pp.id === t.productId);
+    return !!(p && (p.pm || "").trim().toLowerCase() === mineName);
+  });
+  const visibleTaskIds = new Set(tasks.map((t: any) => t.id));
+  activity = activity.filter((a: any) => !a.taskId || visibleTaskIds.has(a.taskId));
+
   const seen = new Set<string>();
   const teams: string[] = [];
   [...TEAM_BASE, ...(org?.teams ?? [])].forEach((t) => {
@@ -70,6 +84,9 @@ export const GET = withAuth(async (user) => {
     me: { id: user.uid, name: user.name, email: user.email, role: user.role, viewAll: user.viewAll === true, capPm: user.capPm === true, capOwner: user.capOwner === true, capReviewer: user.capReviewer === true },
     organization: org ? { id: org.id, name: org.name } : null,
     products,
+    // All active products, for the owner/reviewer create picker (they are otherwise
+    // scoped to products they already work on).
+    pickableProducts: allProducts.filter((p: any) => !p.decommissioned).map((p: any) => ({ id: p.id, name: p.name, type: p.type, pm: p.pm, decommissioned: false })),
     tasks,
     activity,
     teams,
