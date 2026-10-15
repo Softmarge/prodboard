@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import BrandLogo from "@/app/components/BrandLogo";
 
 export default function ForgotPage() {
   const [email, setEmail] = useState("");
@@ -36,12 +37,7 @@ export default function ForgotPage() {
       <div className="authcard">
         <div className="brandrow">
           <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} aria-label="ProdBoard home">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="mk" src="/prodboard-icon.png" alt="ProdBoard" width={28} height={28} />
-            <div>
-              <div className="nm">Prod<span className="b">Board</span></div>
-              <div className="sub">Tech delivery visibility</div>
-            </div>
+            <BrandLogo height={30} sub="Tech delivery visibility" />
           </Link>
         </div>
         <h1>Reset your password</h1>

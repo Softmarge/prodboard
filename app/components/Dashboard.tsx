@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import BrandLogo from "./BrandLogo";
 import {
   Activity,
   BSORTS,
@@ -415,12 +416,7 @@ export default function Dashboard({ me }: { me: Me }) {
     <HLContext.Provider value={hlCtx}>
       <div className="brand">
         <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} title="Go to ProdBoard home" aria-label="ProdBoard home">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="mk" src="/prodboard-icon.png" alt="ProdBoard" width={28} height={28} />
-          <div style={{ minWidth: 0 }}>
-            <div className="nm">Prod<span className="b">Board</span></div>
-            <div className="sub">{orgName ? `Organization: ${orgName}` : "Tech delivery visibility"}</div>
-          </div>
+          <BrandLogo height={30} sub={orgName ? `Organization: ${orgName}` : "Tech delivery visibility"} />
         </Link>
         <div className="spacer" />
         {lastActivity && <div className="lastupd" title={`${eventText(lastActivity)} by ${lastActivity.author}`}><span className="lu-k">Last update</span><span className="lu-v">{relTime(lastActivity.ts)}{lastActivity.author ? ` · ${lastActivity.author}` : ""}</span></div>}

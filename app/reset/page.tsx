@@ -3,6 +3,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PasswordInput from "@/app/components/PasswordInput";
+import BrandLogo from "@/app/components/BrandLogo";
 import { passwordProblem, PASSWORD_MIN } from "@/lib/password";
 
 function ResetForm() {
@@ -85,12 +86,7 @@ export default function ResetPage() {
       <div className="authcard">
         <div className="brandrow">
           <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} aria-label="ProdBoard home">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="mk" src="/prodboard-icon.png" alt="ProdBoard" width={28} height={28} />
-            <div>
-              <div className="nm">Prod<span className="b">Board</span></div>
-              <div className="sub">Tech delivery visibility</div>
-            </div>
+            <BrandLogo height={30} sub="Tech delivery visibility" />
           </Link>
         </div>
         <Suspense fallback={<div className="hint">Loading…</div>}>

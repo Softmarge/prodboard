@@ -57,6 +57,15 @@ select,input,textarea{font-family:inherit;font-size:inherit;color:var(--fg)}
 .logo .mk{width:28px;height:28px;border-radius:7px;flex:none;display:block;object-fit:contain}
 .logo .nm{font-weight:700;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .logo .nm .b{color:var(--accent)}
+/* Full logo lockup (icon + wordmark) as one image, with a theme-swapped variant. */
+.pblogo{display:inline-flex;flex-direction:column;gap:2px;min-width:0}
+.pblogo-imgs{display:inline-flex;align-items:center}
+.pblogo-img{display:block;width:auto;max-width:100%}
+.pblogo-img.dark{display:none}
+.pblogo-sub{color:var(--faint);font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pblogo-img.light{display:none}:root:not([data-theme="light"]) .pblogo-img.dark{display:block}}
+:root[data-theme="dark"] .pblogo-img.light{display:none}
+:root[data-theme="dark"] .pblogo-img.dark{display:block}
 .logo .sub{color:var(--faint);font-size:11px;font-weight:500;white-space:nowrap}
 .brand .spacer{flex:1}
 .whoami{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;white-space:nowrap}
