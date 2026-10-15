@@ -121,6 +121,7 @@ export async function POST(req: Request) {
           intro: "Enter this code to finish creating your ProdBoard account. It expires in 10 minutes.",
           code,
         }),
+        text: `Your ProdBoard verification code is ${code}. It expires in 10 minutes. If you did not request this, ignore this email.`,
       });
   if (!sent) return error("Could not send the verification email. Try again shortly.", 502);
 

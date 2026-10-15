@@ -66,6 +66,7 @@ export async function POST(req: Request) {
         intro: "Enter this code to finish signing in to ProdBoard. It expires in 10 minutes.",
         code,
       }),
+      text: `Your new ProdBoard verification code is ${code}. It expires in 10 minutes.`,
     });
   }
   return json({ ok: true });

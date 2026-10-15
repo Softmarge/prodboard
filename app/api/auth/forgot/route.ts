@@ -59,6 +59,7 @@ export async function POST(req: Request) {
           intro: "We received a request to reset your ProdBoard password. This link expires in one hour.",
           button: { label: "Choose a new password", url: link },
         }),
+        text: `Reset your ProdBoard password: ${link} (expires in one hour). If you did not request this, ignore this email.`,
       });
     }
   }
