@@ -5,6 +5,7 @@ import { hashPassword } from "@/lib/auth";
 import { error, json } from "@/lib/api";
 import { passwordProblem } from "@/lib/password";
 import { sendEmail, emailConfigured } from "@/lib/email";
+import { brandedEmail } from "@/lib/emailTemplate";
 import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -96,24 +97,30 @@ export async function POST(req: Request) {
   // While there is no verified sending domain, Resend can only deliver to the
   // account owner. VERIFICATION_RELAY_TO routes every code to that one inbox,
   // tagged with who is signing up, so an admin can relay it.
+  const origin = new URL(req.url).origin;
   const relayTo = process.env.VERIFICATION_RELAY_TO;
   const relayed = !!relayTo;
   const sent = relayed
     ? await sendEmail({
         to: relayTo!,
         subject: `ProdBoard verification code for ${payload.name}`,
-        html: `<p>New ProdBoard sign-up awaiting email verification.</p>
-               <p><b>Name:</b> ${payload.name}<br/><b>Email:</b> ${email}</p>
-               <p>Verification code:</p>
-               <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
-               <p>Share this code with them so they can finish signing up. It expires in 10 minutes.</p>`,
+        html: brandedEmail({
+          origin,
+          heading: "Sign-up code to share",
+          intro: `A new ProdBoard sign-up is awaiting verification.<br/><b>Name:</b> ${payload.name}<br/><b>Email:</b> ${email}`,
+          code,
+          outro: "Share this code with them so they can finish signing up. It expires in 10 minutes.",
+        }),
       })
     : await sendEmail({
         to: email,
         subject: "Your ProdBoard verification code",
-        html: `<p>Your ProdBoard verification code is:</p>
-               <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
-               <p>It expires in 10 minutes. If you did not request this, you can ignore this email.</p>`,
+        html: brandedEmail({
+          origin,
+          heading: "Verify your email",
+          intro: "Enter this code to finish creating your ProdBoard account. It expires in 10 minutes.",
+          code,
+        }),
       });
   if (!sent) return error("Could not send the verification email. Try again shortly.", 502);
 

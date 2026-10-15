@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { json, error } from "@/lib/api";
 import { sendEmail } from "@/lib/email";
+import { brandedEmail } from "@/lib/emailTemplate";
 import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -40,17 +41,24 @@ export async function POST(req: Request) {
       await sendEmail({
         to: relayTo,
         subject: `ProdBoard password reset for ${user.name}`,
-        html: `<p>A ProdBoard password reset was requested.</p>
-               <p><b>Name:</b> ${user.name}<br/><b>Email:</b> ${email}</p>
-               <p><a href="${link}">Reset link</a> (expires in one hour). Share it with them.</p>`,
+        html: brandedEmail({
+          origin,
+          heading: "Password reset to share",
+          intro: `A ProdBoard password reset was requested.<br/><b>Name:</b> ${user.name}<br/><b>Email:</b> ${email}`,
+          button: { label: "Open reset link", url: link },
+          outro: "Share this link with them. It expires in one hour.",
+        }),
       });
     } else {
       await sendEmail({
         to: email,
         subject: "Reset your ProdBoard password",
-        html: `<p>We received a request to reset your ProdBoard password.</p>
-               <p><a href="${link}">Choose a new password</a>. This link expires in one hour.</p>
-               <p>If you did not request this, you can ignore this email.</p>`,
+        html: brandedEmail({
+          origin,
+          heading: "Reset your password",
+          intro: "We received a request to reset your ProdBoard password. This link expires in one hour.",
+          button: { label: "Choose a new password", url: link },
+        }),
       });
     }
   }

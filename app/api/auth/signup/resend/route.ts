@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { error, json } from "@/lib/api";
 import { sendEmail } from "@/lib/email";
+import { brandedEmail } from "@/lib/emailTemplate";
 import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -41,24 +42,30 @@ export async function POST(req: Request) {
     where: { email },
     data: { codeHash: hashCode(code), attempts: 0, expiresAt: new Date(Date.now() + 1000 * 60 * 10) },
   });
+  const origin = new URL(req.url).origin;
   const relayTo = process.env.VERIFICATION_RELAY_TO;
   if (relayTo) {
     await sendEmail({
       to: relayTo,
       subject: `ProdBoard verification code for ${pending.name}`,
-      html: `<p>New verification code requested for a ProdBoard sign-up.</p>
-             <p><b>Name:</b> ${pending.name}<br/><b>Email:</b> ${email}</p>
-             <p>Verification code:</p>
-             <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
-             <p>Share it with them. It expires in 10 minutes.</p>`,
+      html: brandedEmail({
+        origin,
+        heading: "New sign-up code to share",
+        intro: `A new verification code was requested.<br/><b>Name:</b> ${pending.name}<br/><b>Email:</b> ${email}`,
+        code,
+        outro: "Share it with them. It expires in 10 minutes.",
+      }),
     });
   } else {
     await sendEmail({
       to: email,
       subject: "Your ProdBoard verification code",
-      html: `<p>Your new ProdBoard verification code is:</p>
-             <p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p>
-             <p>It expires in 10 minutes.</p>`,
+      html: brandedEmail({
+        origin,
+        heading: "Your new verification code",
+        intro: "Enter this code to finish signing in to ProdBoard. It expires in 10 minutes.",
+        code,
+      }),
     });
   }
   return json({ ok: true });
