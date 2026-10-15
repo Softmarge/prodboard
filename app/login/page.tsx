@@ -40,9 +40,10 @@ export default function LoginPage() {
       <div className="authcard">
         <div className="brandrow">
           <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} aria-label="ProdBoard home">
-            <div className="mk">PB</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="mk" src="/prodboard-icon.png" alt="ProdBoard" width={28} height={28} />
             <div>
-              <div className="nm">ProdBoard</div>
+              <div className="nm">Prod<span className="b">Board</span></div>
               <div className="sub">Tech delivery visibility</div>
             </div>
           </Link>

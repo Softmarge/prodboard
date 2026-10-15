@@ -99,8 +99,9 @@ html[data-theme="dark"] .lp a.lp-cta-primary, html[data-theme="dark"] .lp a.lp-c
 .lp-header { background: var(--header-bg); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50; }
 .lp-nav { max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
 .lp-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--fg); }
-.lp-mark { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg, var(--brand), var(--accent)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; letter-spacing: 0.02em; }
+.lp-mark { width: 36px; height: 36px; border-radius: 9px; display: block; object-fit: contain; }
 .lp-brandname { font-weight: 700; font-size: 19px; }
+.lp-brandname .b { color: var(--accent); }
 .lp-navlinks { display: flex; flex-wrap: wrap; align-items: center; gap: 28px; font-size: 15px; font-weight: 500; }
 .lp-navlinks a { color: var(--nav-link); text-decoration: none; }
 .lp-navlinks a:hover { color: var(--fg); }
@@ -217,7 +218,7 @@ html[data-theme="dark"] .lp-cta-ghost { color: #E6EAF0; border-color: #2B6B61; }
 .lp-footer { border-top: 1px solid var(--border); background: var(--surface); }
 .lp-footer-inner { max-width: 1200px; margin: 0 auto; padding: 32px 24px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; font-size: 14px; color: var(--muted); }
 .lp-footer-brand { display: flex; align-items: center; gap: 10px; }
-.lp-footer-mark { width: 28px; height: 28px; border-radius: 7px; background: linear-gradient(135deg, var(--brand), var(--accent)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 11px; }
+.lp-footer-mark { width: 28px; height: 28px; border-radius: 7px; display: block; object-fit: contain; }
 .lp-footer-links { display: flex; flex-wrap: wrap; gap: 24px; }
 .lp-footer-links a { color: var(--muted); text-decoration: none; }
 .lp-footer-links a:hover { color: var(--fg); }

@@ -29,8 +29,9 @@ export default function Landing({ signedIn }: { signedIn: boolean }) {
       <header className="lp-header">
         <nav className="lp-nav">
           <Link href="/" className="lp-brand" aria-label="ProdBoard home">
-            <span className="lp-mark">PB</span>
-            <span className="lp-brandname">ProdBoard</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="lp-mark" src="/prodboard-icon.png" alt="ProdBoard" width={36} height={36} />
+            <span className="lp-brandname">Prod<span className="b">Board</span></span>
           </Link>
           <div className="lp-navlinks">
             <a href="#features">Features</a>
@@ -243,7 +244,8 @@ export default function Landing({ signedIn }: { signedIn: boolean }) {
       <footer className="lp-footer">
         <div className="lp-footer-inner">
           <div className="lp-footer-brand">
-            <span className="lp-footer-mark">PB</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="lp-footer-mark" src="/prodboard-icon.png" alt="ProdBoard" width={28} height={28} />
             <span>ProdBoard by <a href="https://www.linkedin.com/in/majestya/" target="_blank" rel="noopener noreferrer">Majesty</a></span>
           </div>
           <div className="lp-footer-links">

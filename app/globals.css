@@ -54,8 +54,9 @@ select,input,textarea{font-family:inherit;font-size:inherit;color:var(--fg)}
 /* ---- brand bar ---- */
 .brand{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:var(--shadow)}
 .logo{display:flex;align-items:center;gap:9px;min-width:0}
-.logo .mk{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--brand),var(--accent));display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px;flex:none}
-.logo .nm{font-weight:600;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.logo .mk{width:28px;height:28px;border-radius:7px;flex:none;display:block;object-fit:contain}
+.logo .nm{font-weight:700;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.logo .nm .b{color:var(--accent)}
 .logo .sub{color:var(--faint);font-size:11px;font-weight:500;white-space:nowrap}
 .brand .spacer{flex:1}
 .whoami{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;white-space:nowrap}

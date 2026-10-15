@@ -415,9 +415,10 @@ export default function Dashboard({ me }: { me: Me }) {
     <HLContext.Provider value={hlCtx}>
       <div className="brand">
         <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} title="Go to ProdBoard home" aria-label="ProdBoard home">
-          <div className="mk">PB</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="mk" src="/prodboard-icon.png" alt="ProdBoard" width={28} height={28} />
           <div style={{ minWidth: 0 }}>
-            <div className="nm">ProdBoard</div>
+            <div className="nm">Prod<span className="b">Board</span></div>
             <div className="sub">{orgName ? `Organization: ${orgName}` : "Tech delivery visibility"}</div>
           </div>
         </Link>
