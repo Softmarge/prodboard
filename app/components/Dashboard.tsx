@@ -423,6 +423,7 @@ export default function Dashboard({ me }: { me: Me }) {
 
   return (
     <HLContext.Provider value={hlCtx}>
+      <div className="app">
       <div className="brand">
         <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} title="Go to ProdBoard home" aria-label="ProdBoard home">
           <BrandLogo height={30} sub={orgName ? `Organization: ${orgName}` : "Tech delivery visibility"} />
@@ -505,6 +506,7 @@ export default function Dashboard({ me }: { me: Me }) {
         )}
       </div>
 
+      <div className="appscroll">
       {asOf && (
         <div className="asof-banner">
           <span>⏱ Historical view. Board shown as of close of business</span>
@@ -540,6 +542,8 @@ export default function Dashboard({ me }: { me: Me }) {
           : view === "report" ? <Report tasks={scopedTasks.filter((t) => !t.pending)} activity={scopedActivity} dispName={dispName} range={range} setRange={setRange} eventText={eventText} />
           : <Feed activity={scopedActivity} tasks={scopedTasks} />}
       </main>
+      </div>
+      </div>
 
       {taskModal.open && (
         <TaskModal editing={taskModal.editing} preProduct={taskModal.preProduct ?? null} preStatus={taskModal.preStatus ?? null} products={products} teamOptions={teamOptions} people={people} registered={registeredOwners} srList={srList} tasks={tasks}
