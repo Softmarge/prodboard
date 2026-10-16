@@ -3,8 +3,8 @@ export type Role = "ADMIN" | "PM" | "VIEWER" | "TASK_OWNER" | "REVIEWER";
 // Short label for a role, as shown on pills and member rows.
 export function roleLabel(r: Role): string {
   switch (r) {
-    case "ADMIN": return "Lead PM";
-    case "PM": return "PM";
+    case "ADMIN": return "Admin";
+    case "PM": return "Manager";
     case "VIEWER": return "Viewer";
     case "TASK_OWNER": return "Task owner";
     case "REVIEWER": return "Reviewer";

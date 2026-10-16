@@ -50,7 +50,7 @@ type MainView = "board" | "myproducts" | "mytasks" | "myreviews" | "products" | 
 // A multi-capability user acts under one "hat" at a time. The mode is a UI lens;
 // the server still authorizes by the user's real capability.
 type Mode = "pm" | "owner" | "reviewer" | "viewer";
-const MODE_LABEL: Record<Mode, string> = { pm: "PM", owner: "Task Owner", reviewer: "Reviewer", viewer: "Viewer" };
+const MODE_LABEL: Record<Mode, string> = { pm: "Manager", owner: "Task Owner", reviewer: "Reviewer", viewer: "Viewer" };
 type BoardView = "kanban" | "list" | "grid";
 type Filters = { q: string; team: string; product: string; owner: string; sr: string; status: string; pm: string };
 const EMPTY_FILTERS: Filters = { q: "", team: "", product: "", owner: "", sr: "", status: "", pm: "" };
@@ -89,9 +89,9 @@ export default function Dashboard({ me }: { me: Me }) {
   const pmScoped = canManage && !isAdmin && !canViewAllEff; // a PM sees only their products
   // All the roles this user holds, for the header pill.
   const heldRoleLabels = isAdmin
-    ? ["Lead PM"]
+    ? ["Admin"]
     : [roleLabel(me.role),
-        me.capPm && me.role !== "PM" ? "PM" : "",
+        me.capPm && me.role !== "PM" ? "Manager" : "",
         me.viewAll && me.role !== "VIEWER" ? "Viewer" : "",
         me.capOwner && me.role !== "TASK_OWNER" ? "Task owner" : "",
         me.capReviewer && me.role !== "REVIEWER" ? "Reviewer" : "",
@@ -491,7 +491,7 @@ export default function Dashboard({ me }: { me: Me }) {
             <select value={filters.product} onChange={(e) => setFilters({ ...filters, product: e.target.value })} aria-label="Product"><option value="">{activeGroup ? "All in group" : "All products"}</option>{[...scopedProducts].sort((a, b) => productOption(a).localeCompare(productOption(b))).map((p) => <option key={p.id} value={p.id}>{productOption(p)}</option>)}</select>
             <select value={filters.owner} onChange={(e) => setFilters({ ...filters, owner: e.target.value })} aria-label="Owner"><option value="">All owners</option>{people.map((o) => <option key={o} value={o}>{o}</option>)}</select>
             <select value={filters.sr} onChange={(e) => setFilters({ ...filters, sr: e.target.value })} aria-label="Service request"><option value="">All requests</option>{srList.map((s) => <option key={s} value={s}>{s}</option>)}</select>
-            {!pmScoped && <select value={filters.pm} onChange={(e) => setFilters({ ...filters, pm: e.target.value })} aria-label="PM"><option value="">All PMs</option>{pmList.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
+            {!pmScoped && <select value={filters.pm} onChange={(e) => setFilters({ ...filters, pm: e.target.value })} aria-label="Manager"><option value="">All managers</option>{pmList.map((p) => <option key={p} value={p}>{p}</option>)}</select>}
             <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} aria-label="Status"><option value="">All statuses</option><option value="NOT_STARTED">Not started</option><option value="IN_PROGRESS">In progress</option><option value="BLOCKED">Blocked</option><option value="IN_REVIEW">In review</option><option value="COMPLETE">Complete</option><option value="OVERDUE">Overdue</option></select>
             <button className="btn ghost sm" onClick={() => setFilters(EMPTY_FILTERS)}>Clear</button>
             <span className="grow" />
@@ -1010,7 +1010,7 @@ function Feed({ activity, tasks }: { activity: Activity[]; tasks: Task[] }) {
 }
 
 // ---------------- Products view ----------------
-const PSORTS: [string, string][] = [["name", "Name"], ["tasks", "Most tasks"], ["type", "Type"], ["pm", "PM"]];
+const PSORTS: [string, string][] = [["name", "Name"], ["tasks", "Most tasks"], ["type", "Type"], ["pm", "Manager"]];
 function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "cards" | "list"; setLayout: (l: "cards" | "list") => void; sort: string; setSort: (s: string) => void; query: string; setQuery: (q: string) => void; showDecom: boolean; setShowDecom: (b: boolean) => void; canWrite: boolean; isAdmin: boolean; onCreate: () => void; onImport: () => void; onSettings: (id: string) => void; onDetail: (id: string) => void; onAdd: (id: string) => void; onDecom: (id: string) => void; }) {
   const { products, tasks, layout, setLayout, sort, setSort, query, setQuery, showDecom, setShowDecom, canWrite, isAdmin, onCreate, onImport, onSettings, onDetail, onAdd, onDecom } = props;
   const count = (id: string) => tasks.filter((t) => t.productId === id).length;
@@ -1050,7 +1050,7 @@ function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "card
           {list.map((p) => { const n = count(p.id); return (
             <div key={p.id} className={`pcard${p.decommissioned ? " decom" : ""}`}>
               <button className="pname-btn" onClick={() => onDetail(p.id)} title="View tasks">{productDisplay(p)}</button>
-              <div className="pmeta">PM: {p.pm || "unassigned"}{p.type ? <> · <span className="ptag" style={{ margin: 0 }}>{p.type}</span></> : null}</div>
+              <div className="pmeta">Manager: {p.pm || "unassigned"}{p.type ? <> · <span className="ptag" style={{ margin: 0 }}>{p.type}</span></> : null}</div>
               <div className="pmeta tnum">{n} task{n === 1 ? "" : "s"}{p.decommissioned ? <span className="decbadge">Decommissioned</span> : null}</div>
               <div className="pacts">{actions(p)}</div>
             </div>
@@ -1062,7 +1062,7 @@ function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "card
             <div key={p.id} className={`prowx${p.decommissioned ? " decom" : ""}`}>
               <div style={{ flex: 1, minWidth: 140 }}>
                 <div><button className="pname-btn" onClick={() => onDetail(p.id)} title="View tasks">{productDisplay(p)}</button>{p.decommissioned ? <span className="decbadge">Decommissioned</span> : null}</div>
-                <div className="hint">PM: {p.pm || "unassigned"} · {n} task{n === 1 ? "" : "s"}</div>
+                <div className="hint">Manager: {p.pm || "unassigned"} · {n} task{n === 1 ? "" : "s"}</div>
               </div>
               {actions(p)}
             </div>
@@ -1083,7 +1083,7 @@ function ProductDetail({ product, tasks, activity, asOf, canWrite, onClose, onOp
         <div className="dhead"><h2>{productDisplay(product)}</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
           <div className="kv" style={{ marginBottom: 12 }}>
-            <span className="k">Managing PM</span><span className="v">{product.pm || "unassigned"}</span>
+            <span className="k">Manager</span><span className="v">{product.pm || "unassigned"}</span>
             <span className="k">Type</span><span className="v">{product.type || "-"}</span>
             <span className="k">Tasks</span><span className="v tnum">{list.length}</span>
             {product.decommissioned ? <><span className="k">Status</span><span className="v"><span className="decbadge" style={{ margin: 0 }}>Decommissioned</span></span></> : null}
@@ -1202,7 +1202,7 @@ function TaskModal({ editing, preProduct, preStatus, products, teamOptions, peop
           <div className="field req"><label>Product</label><select value={productId} disabled={lockProduct} onChange={(e) => setProductId(e.target.value)}>{liveProducts.length ? [...liveProducts].sort((a, b) => productOption(a).localeCompare(productOption(b))).map((p) => <option key={p.id} value={p.id}>{productOption(p)}</option>) : <option value="">No products yet</option>}</select>
             {ownerMode ? (involvedIds && productId && involvedIds.has(productId)
               ? <div className="ownerbadge on" style={{ marginTop: 6 }}>You work on this product, so this task goes live right away.</div>
-              : <div className="ownerbadge off" style={{ marginTop: 6 }}>New product for you. A PM will approve this task before others can see it.</div>) : null}
+              : <div className="ownerbadge off" style={{ marginTop: 6 }}>New product for you. A manager will approve this task before others can see it.</div>) : null}
           </div>
           <div className="two">
             {ownerMode ? (
@@ -1371,7 +1371,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, rev
           {iCreated && task.pending && (ownerActing || reviewerActing) && (
             <div className="confirmbox-inline">
               <div style={{ fontWeight: 600, marginBottom: 2 }}>Pending approval</div>
-              <div className="hint" style={{ marginBottom: 8 }}>This task is on a product new to you, so a PM will approve it before others can see it. You can edit it, for example to move it to the right product.</div>
+              <div className="hint" style={{ marginBottom: 8 }}>This task is on a product new to you, so a manager will approve it before others can see it. You can edit it, for example to move it to the right product.</div>
               <div style={{ display: "flex", justifyContent: "flex-end" }}><button className="btn sm" onClick={() => onEdit(task)} disabled={busy}>Edit details</button></div>
             </div>
           )}
@@ -1443,7 +1443,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, rev
           )}
           {ownerActing && iAmOwner && (
             <div className="addupd">
-              {awaiting ? <div className="hint" style={{ marginBottom: 8 }}>You marked this done. Awaiting PM confirmation.</div> : null}
+              {awaiting ? <div className="hint" style={{ marginBottom: 8 }}>You marked this done. Awaiting Manager confirmation.</div> : null}
               <div className="field"><label>Progress note</label><textarea value={ownerNote} onChange={(e2) => setOwnerNote(e2.target.value)} placeholder="what you did; evidence it is moving" rows={3} /></div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 {iCreated ? <button className="btn sm" onClick={() => onEdit(task)} disabled={busy}>Edit details</button> : null}
@@ -1455,7 +1455,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, rev
           )}
           {reviewerActing && iAmReviewer && (
             <div className="addupd">
-              <div className="hint" style={{ marginBottom: 8 }}>You are the reviewer on this task. Add a review note; the PM and owner can see it in the history.</div>
+              <div className="hint" style={{ marginBottom: 8 }}>You are the reviewer on this task. Add a review note; the manager and owner can see it in the history.</div>
               <div className="field"><label>Review note</label><textarea value={reviewerNote} onChange={(e2) => setReviewerNote(e2.target.value)} placeholder="your review feedback" rows={3} /></div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button className="btn primary sm" onClick={reviewerPostNote} disabled={busy}>Post review note</button>
@@ -1477,7 +1477,7 @@ function TaskDrawer({ task, activity, dispName, asOf, canWrite, ownerActing, rev
       </aside>
       {confirmExit && <ConfirmExit what={`your update on “${task.title}”`} saving={busy} onSave={saveAndExit} onDiscard={onClose} onCancel={() => setConfirmExit(false)} />}
       {confirmPost && <ConfirmAction title="Post this update?" message={<>Change the status of <b>{task.title}</b> from <b>{statusMeta(task.status).label}</b> to <b>{statusMeta(status).label}</b>?</>} confirmLabel="Post update" busy={busy} onConfirm={reallyPost} onCancel={() => { if (!busy) setConfirmPost(false); }} />}
-      {confirmMarkDone && <ConfirmAction title="Mark as done?" message={<>Mark <b>{task.title}</b> as done and send it to the PM for confirmation?</>} confirmLabel="Mark done" busy={busy} onConfirm={() => { setConfirmMarkDone(false); ownerMarkDone(); }} onCancel={() => { if (!busy) setConfirmMarkDone(false); }} />}
+      {confirmMarkDone && <ConfirmAction title="Mark as done?" message={<>Mark <b>{task.title}</b> as done and send it to the manager for confirmation?</>} confirmLabel="Mark done" busy={busy} onConfirm={() => { setConfirmMarkDone(false); ownerMarkDone(); }} onCancel={() => { if (!busy) setConfirmMarkDone(false); }} />}
     </>
   );
 }
@@ -1529,7 +1529,7 @@ function ProductCreateModal({ people, onClose, onCreate }: { people: string[]; o
             <div className="typegrid">{PTYPES.map((ty) => <label className="tychk" key={ty}><input type="radio" name="ptype" checked={type === ty} onChange={() => setType(ty)} /> {ty}</label>)}</div>
             <div className="hint" style={{ marginTop: 4 }}>Type is fixed after creation. Shows as name + type, e.g. “Winbundle Mobile App”.</div>
           </div>
-          <div className="field"><label>Managing PM</label><input list="people-dl" value={pm} onChange={(e) => setPm(e.target.value)} placeholder="PM name" /><datalist id="people-dl">{people.map((p) => <option key={p} value={p} />)}</datalist></div>
+          <div className="field"><label>Manager</label><input list="people-dl" value={pm} onChange={(e) => setPm(e.target.value)} placeholder="Manager name" /><datalist id="people-dl">{people.map((p) => <option key={p} value={p} />)}</datalist></div>
           {err && <div className="err">{err}</div>}
         </div>
         <div className="dfoot"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={() => { if (!name.trim()) { setErr("Name the product."); return; } onCreate({ name, pm, type }); }}>Create product</button></div>
@@ -1548,7 +1548,7 @@ function ProductSettingsModal({ product, people, isAdmin, onClose, onSave, onDec
         <div className="dbody">
           <div className="field"><label>Product name</label><input value={name} onChange={(e) => setName(e.target.value)} /></div>
           <div className="field"><label>Type (fixed)</label><div style={{ paddingTop: 2 }}><span className="ptag" style={{ margin: 0 }}>{product.type || "-"}</span> <span className="hint">type can’t be changed after creation</span></div></div>
-          <div className="field"><label>Managing PM</label><input list="people-dl2" value={pm} onChange={(e) => setPm(e.target.value)} placeholder="PM name" /><datalist id="people-dl2">{people.map((p) => <option key={p} value={p} />)}</datalist></div>
+          <div className="field"><label>Manager</label><input list="people-dl2" value={pm} onChange={(e) => setPm(e.target.value)} placeholder="Manager name" /><datalist id="people-dl2">{people.map((p) => <option key={p} value={p} />)}</datalist></div>
           {err && <div className="err">{err}</div>}
         </div>
         <div className="dfoot">
@@ -1598,7 +1598,7 @@ function ProfileModal({ currentName, onClose, onSaved, flash }: { currentName: s
           {step === "name" ? (
             <>
               <div className="field"><label htmlFor="pf-name">Display name</label><input id="pf-name" value={name} onChange={(e) => setName(e.target.value)} /></div>
-              <div className="hint">Changing your name needs email verification and must be unique in your organization. It is how products are matched to you, so set it to the exact PM name on your products (for example “Majesty”).</div>
+              <div className="hint">Changing your name needs email verification and must be unique in your organization. It is how products are matched to you, so set it to the exact Manager name on your products (for example “Majesty”).</div>
               {err && <div className="err">{err}</div>}
             </>
           ) : (
@@ -1808,7 +1808,7 @@ function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }
                           <input type="checkbox" checked={on} onChange={() => toggle(p.id)} />
                           <span style={{ flex: 1, minWidth: 0 }}>
                             <span className="gpick-name">{p.name}</span>
-                            <span className="hint" style={{ display: "block" }}>PM: {p.pm || "unassigned"}{p.type ? ` · ${p.type}` : ""}</span>
+                            <span className="hint" style={{ display: "block" }}>Manager: {p.pm || "unassigned"}{p.type ? ` · ${p.type}` : ""}</span>
                           </span>
                         </label>
                       );
@@ -2020,7 +2020,7 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
 
   const inviteRoleLabel =
     role === "VIEWER" ? "Viewer (read-only)"
-    : role === "PM" ? "Product Manager"
+    : role === "PM" ? "Manager"
     : role === "TASK_OWNER" ? "Task owner"
     : role === "REVIEWER" ? "Reviewer"
     : "their choice of role";
@@ -2038,7 +2038,7 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
             <label htmlFor="invite-role">Invite as</label>
             <select id="invite-role" value={role} onChange={(e) => onSetting(setRole)(e.target.value as InviteRoleChoice)}>
               <option value="">Let them choose</option>
-              <option value="PM">Product Manager</option>
+              <option value="PM">Manager</option>
               <option value="VIEWER">Viewer (read-only)</option>
               <option value="TASK_OWNER">Task owner (sees only their tasks)</option>
               <option value="REVIEWER">Reviewer (sees only tasks they review)</option>
@@ -2080,7 +2080,7 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
 }
 
 // ---------------- Members ----------------
-const ROLE_CHECKS: [Role, string][] = [["ADMIN", "Admin"], ["PM", "PM"], ["VIEWER", "Viewer"], ["TASK_OWNER", "Task owner"], ["REVIEWER", "Reviewer"]];
+const ROLE_CHECKS: [Role, string][] = [["ADMIN", "Admin"], ["PM", "Manager"], ["VIEWER", "Viewer"], ["TASK_OWNER", "Task owner"], ["REVIEWER", "Reviewer"]];
 const ROLE_PRIORITY: Role[] = ["ADMIN", "PM", "VIEWER", "TASK_OWNER", "REVIEWER"];
 // The roles a member currently holds (primary role plus any granted capabilities).
 function rolesOf(m: Member): Set<Role> {
@@ -2127,7 +2127,7 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
       <div className="modal" role="dialog" aria-modal="true">
         <div className="dhead"><h2>Members</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
-          <div className="hint" style={{ marginBottom: 10 }}>Tick every role a person should have; they can hold more than one and switch between them with the Mode selector. Admins manage everything. PMs create and update products and tasks. Viewers have read-only access to the whole organization. Task owners and reviewers see only their own work. A member’s name must match the PM name on their products for scoping to work.</div>
+          <div className="hint" style={{ marginBottom: 10 }}>Tick every role a person should have; they can hold more than one and switch between them with the Mode selector. Admins manage everything. Managers create and update products and tasks. Viewers have read-only access to the whole organization. Task owners and reviewers see only their own work. A member’s name must match the Manager name on their products for scoping to work.</div>
           {loading ? <div className="hint">Loading…</div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {members.map((m) => {
@@ -2159,7 +2159,7 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
 }
 
 // ---------------- Feature alerts (admin) ----------------
-const ALERT_AUD: [string, string][] = [["all", "Everyone"], ["pm", "PMs"], ["owner", "Task owners"], ["reviewer", "Reviewers"], ["viewer", "Viewers"]];
+const ALERT_AUD: [string, string][] = [["all", "Everyone"], ["pm", "Managers"], ["owner", "Task owners"], ["reviewer", "Reviewers"], ["viewer", "Viewers"]];
 function audienceLabel(aud: string[]): string {
   if (!aud || !aud.length || aud.includes("all")) return "Everyone";
   return aud.map((a) => ALERT_AUD.find(([k]) => k === a)?.[1] || a).join(", ");

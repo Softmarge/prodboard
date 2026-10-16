@@ -9,10 +9,10 @@ import { passwordProblem, PASSWORD_MIN } from "@/lib/password";
 function roleName(r: string | null): string {
   switch (r) {
     case "VIEWER": return "Viewer (read-only)";
-    case "PM": return "Product Manager";
+    case "PM": return "Manager";
     case "TASK_OWNER": return "Task owner";
     case "REVIEWER": return "Reviewer";
-    default: return "Product Manager";
+    default: return "Manager";
   }
 }
 
@@ -142,7 +142,7 @@ function SignupForm() {
     <>
       <h1>Create your account</h1>
       <p className="lead">
-        {joining ? <>You are joining <b>{invitedOrg}</b>.</> : "The first person to register an organization becomes its admin (Lead PM)."}
+        {joining ? <>You are joining <b>{invitedOrg}</b>.</> : "The first person to register an organization becomes its admin."}
       </p>
       {inviteError && <div className="err" style={{ marginBottom: 12 }}>{inviteError} You can still create a new organization below, or ask your colleague for a fresh link.</div>}
       <form onSubmit={startSignup}>
@@ -165,7 +165,7 @@ function SignupForm() {
         <div className="field">
           <label htmlFor="role">Role</label>
           <select id="role" value={form.role} onChange={(e) => set("role", e.target.value)} disabled={joining && !!invitedRole}>
-            <option value="PM">Product Manager</option>
+            <option value="PM">Manager</option>
             <option value="VIEWER">Viewer (read-only)</option>
             {(invitedRole === "TASK_OWNER" || form.role === "TASK_OWNER") && <option value="TASK_OWNER">Task owner</option>}
             {(invitedRole === "REVIEWER" || form.role === "REVIEWER") && <option value="REVIEWER">Reviewer</option>}

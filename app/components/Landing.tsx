@@ -104,8 +104,8 @@ export default function Landing({ signedIn }: { signedIn: boolean }) {
             </div>
             <div className="lp-feature">
               <span className="lp-ficon f3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 5h18l-7 8v6l-4-2v-4z" /></svg></span>
-              <h3>Filters that think like a PM</h3>
-              <p>Slice by team, owner, request, PM or status, or rewind the board to any date with As of.</p>
+              <h3>Filters that think like a manager</h3>
+              <p>Slice by team, owner, request, manager or status, or rewind the board to any date with As of.</p>
             </div>
             <div className="lp-feature">
               <span className="lp-ficon f4"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z" /><path d="M14 3v5h5" /><path d="M9 13h7" /><path d="M9 17h5" /></svg></span>
