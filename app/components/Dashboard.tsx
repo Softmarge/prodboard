@@ -133,6 +133,7 @@ export default function Dashboard({ me }: { me: Me }) {
   const [featureAlerts, setFeatureAlerts] = useState<{ id: string; title: string; body: string; linkUrl: string | null; linkLabel: string | null }[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [taskImportOpen, setTaskImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
   // Product groups: Main (all) vs a selected personal group. The selection is
@@ -497,6 +498,7 @@ export default function Dashboard({ me }: { me: Me }) {
             <span className="grow" />
             <div className="tt"><label htmlFor="asof">As of</label><input id="asof" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} /></div>
             <button className="btn sm" onClick={doExport}>Export CSV</button>
+            {isAdmin && <button className="btn sm" onClick={() => setTaskImportOpen(true)}>Import tasks</button>}
             {(canWrite || canOwnerCreate) && <button className="btn primary sm" onClick={() => setTaskModal({ open: true, editing: null, ownerCreate: !canWrite })}>+ Task</button>}
           </div>
         )}
@@ -576,6 +578,8 @@ export default function Dashboard({ me }: { me: Me }) {
       {profileOpen && <ProfileModal currentName={me.name} onClose={() => setProfileOpen(false)} onSaved={async (msg) => { setProfileOpen(false); flash(msg); await loadAll(); router.refresh(); }} flash={flash} />}
 
       {importOpen && <ImportModal onClose={() => setImportOpen(false)} onDone={async (msg) => { setImportOpen(false); await reloadProducts(); flash(msg); }} flash={flash} />}
+
+      {taskImportOpen && <TaskImportModal onClose={() => setTaskImportOpen(false)} onDone={async (msg) => { setTaskImportOpen(false); await loadAll(); flash(msg); }} flash={flash} />}
 
       {moveConfirm && (
         <ConfirmAction
@@ -1700,6 +1704,92 @@ function ImportModal({ onClose, onDone, flash }: { onClose: () => void; onDone: 
             <textarea id="imp-text" value={text} onChange={(e) => setText(e.target.value)} placeholder={"Name,Type,PM\nWinBundle Website,Website,Chisom"} style={{ minHeight: 120, fontFamily: "var(--mono)" }} />
           </div>
           <div className="hint">{rows.length ? `${rows.length} product${rows.length === 1 ? "" : "s"} detected.` : "No rows detected yet."}</div>
+        </div>
+        <div className="dfoot">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={doImport} disabled={busy || !rows.length}>{busy ? "Importing…" : `Import ${rows.length || ""}`.trim()}</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------- Import tasks ----------------
+type ImportTaskRow = { ref: string; product: string; type: string; title: string; team: string; owner: string; reviewer: string; priority: string; status: string; startDate: string; dueDate: string; context: string; blocker: string; note1: string; note2: string };
+const TASK_COLS: (keyof ImportTaskRow)[] = ["ref", "product", "type", "title", "team", "owner", "reviewer", "priority", "status", "startDate", "dueDate", "context", "blocker", "note1", "note2"];
+function rowsToTasks(matrix: string[][]): ImportTaskRow[] {
+  if (!matrix.length) return [];
+  const header = matrix[0].map((h) => h.trim().toLowerCase());
+  const looksHeader = header.some((h) => /(ref|task|product|title|owner|status|type|due|note)/.test(h));
+  const col: Record<keyof ImportTaskRow, number> = { ref: 0, product: 1, type: 2, title: 3, team: 4, owner: 5, reviewer: 6, priority: 7, status: 8, startDate: 9, dueDate: 10, context: 11, blocker: 12, note1: 13, note2: 14 };
+  let start = 0;
+  if (looksHeader) {
+    start = 1;
+    const find = (preds: ((h: string) => boolean)[]) => { for (const p of preds) { const i = header.findIndex(p); if (i >= 0) return i; } return -1; };
+    col.ref = find([(h) => h === "ref" || h === "task id" || h === "id", (h) => h.includes("ref")]);
+    col.product = find([(h) => h === "product", (h) => h.includes("product") && !h.includes("type")]);
+    col.type = find([(h) => h === "type" || h.includes("type")]);
+    col.title = find([(h) => h === "title", (h) => h === "task", (h) => h.includes("title"), (h) => h.includes("task") && !h.includes("id")]);
+    col.team = find([(h) => h === "team", (h) => h.includes("team"), (h) => h.includes("discipline")]);
+    col.owner = find([(h) => h === "owner", (h) => h.includes("owner")]);
+    col.reviewer = find([(h) => h.includes("review")]);
+    col.priority = find([(h) => h.includes("priorit")]);
+    col.status = find([(h) => h === "status", (h) => h.includes("status")]);
+    col.startDate = find([(h) => h.includes("start")]);
+    col.dueDate = find([(h) => h.includes("due")]);
+    col.context = find([(h) => h.includes("context"), (h) => h.includes("description")]);
+    col.blocker = find([(h) => h.includes("blocker"), (h) => h.includes("dependency")]);
+    col.note1 = find([(h) => h.includes("note 1") || h.includes("note1"), (h) => h.includes("note") && h.includes("1")]);
+    col.note2 = find([(h) => h.includes("note 2") || h.includes("note2"), (h) => h.includes("note") && h.includes("2")]);
+  }
+  const cell = (row: string[], i: number) => (i >= 0 ? (row[i] || "") : "").trim();
+  const out: ImportTaskRow[] = [];
+  for (let r = start; r < matrix.length; r++) {
+    const row = matrix[r];
+    const rec = {} as ImportTaskRow;
+    TASK_COLS.forEach((c) => { rec[c] = cell(row, col[c]); });
+    if (rec.title && rec.product) out.push(rec);
+  }
+  return out;
+}
+function TaskImportModal({ onClose, onDone, flash }: { onClose: () => void; onDone: (msg: string) => void; flash: (m: string) => void; }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const rows = useMemo(() => rowsToTasks(parseCSV(text)), [text]);
+  async function readFile(f: File) {
+    const name = f.name.toLowerCase();
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) { flash("Save the sheet as CSV and upload that, or paste the rows."); return; }
+    setText(await f.text());
+  }
+  async function doImport() {
+    if (!rows.length) { flash("No rows found. Paste CSV or choose a .csv file."); return; }
+    setBusy(true);
+    try {
+      const res = await api("/api/tasks/import", { method: "POST", body: JSON.stringify({ rows }) });
+      let msg = `Imported ${res.created} task${res.created === 1 ? "" : "s"}`;
+      if (res.notes) msg += `, ${res.notes} progress note${res.notes === 1 ? "" : "s"}`;
+      if (res.skipped) msg += `, skipped ${res.skipped}`;
+      msg += ".";
+      if (res.problems && res.problems.length) flash(res.problems[0]);
+      onDone(msg);
+    } catch (e) { flash((e as Error).message); setBusy(false); }
+  }
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Import tasks</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          <p className="lead" style={{ marginBottom: 12 }}>Upload a CSV with columns <b>Ref, Product, Type, Title, Team, Owner, Reviewer, Priority, Status, Start Date, Due Date, Context, Blocker, Note 1, Note 2</b> (a header row is detected automatically). Products are matched or created by name and type; owners already on ProdBoard are linked to their accounts, the rest stay as labels to link later. Note 1 and Note 2 become progress notes. Rows whose Ref already exists are skipped, so re-running is safe.</p>
+          <div className="field">
+            <label htmlFor="tk-file">CSV file</label>
+            <input id="tk-file" type="file" accept=".csv,text/csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); }} />
+          </div>
+          <div className="field">
+            <label htmlFor="tk-text">…or paste rows</label>
+            <textarea id="tk-text" value={text} onChange={(e) => setText(e.target.value)} placeholder={"Ref,Product,Type,Title,Team,Owner,...,Status,Start Date,Due Date\nPRD-001-T01,WinBundle,Website,Written Content,Marketing,Jude,,2,NOT_STARTED,2026-10-01,2026-10-16"} style={{ minHeight: 120, fontFamily: "var(--mono)" }} />
+          </div>
+          <div className="hint">{rows.length ? `${rows.length} task${rows.length === 1 ? "" : "s"} detected.` : "No rows detected yet."}</div>
         </div>
         <div className="dfoot">
           <button className="btn" onClick={onClose}>Cancel</button>
