@@ -93,6 +93,26 @@ export async function POST(req: Request) {
     await markInviteUsed(resolvedInvite.linkId);
   }
 
+  // If the invite linked this account to an existing free-text person, remember
+  // that label as an alias and link their existing owned/reviewed tasks.
+  if (resolvedInvite?.linkName) {
+    const { normName } = await import("@/lib/owner");
+    const linkName = resolvedInvite.linkName.trim();
+    const key = normName(linkName);
+    if (key && key !== normName(result.user.name)) {
+      await prisma.user.update({ where: { id: result.user.id }, data: { ownerAliases: { set: Array.from(new Set([linkName])) } } }).catch(() => {});
+    }
+    const matchKey = (s?: string | null) => normName(s || "") === key;
+    const [ownerTasks, reviewerTasks] = await Promise.all([
+      prisma.task.findMany({ where: { organizationId: result.org.id, ownerUserId: null }, select: { id: true, owner: true } }),
+      prisma.task.findMany({ where: { organizationId: result.org.id, reviewerUserId: null }, select: { id: true, reviewer: true } }),
+    ]);
+    const ownIds = ownerTasks.filter((t: any) => matchKey(t.owner)).map((t: any) => t.id);
+    const revIds = reviewerTasks.filter((t: any) => matchKey(t.reviewer)).map((t: any) => t.id);
+    if (ownIds.length) await prisma.task.updateMany({ where: { id: { in: ownIds } }, data: { ownerUserId: result.user.id } });
+    if (revIds.length) await prisma.task.updateMany({ where: { id: { in: revIds } }, data: { reviewerUserId: result.user.id } });
+  }
+
   await setSession({
     uid: result.user.id,
     oid: result.org.id,

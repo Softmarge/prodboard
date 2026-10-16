@@ -8,6 +8,7 @@ const Post = z.object({
   role: z.enum(["PM", "VIEWER", "TASK_OWNER", "REVIEWER"]).nullable().optional(),
   firstName: z.string().max(80).optional(),
   surname: z.string().max(80).optional(),
+  linkName: z.string().max(120).optional(),
 });
 
 // Any signed-in member can create an invite link. Role and name are all
@@ -22,8 +23,11 @@ export const POST = withAuth(async (user, req) => {
   }
   const link = await createInviteLink(user.oid, {
     role: data.role ?? null,
-    firstName: data.firstName,
+    // If linking to an existing free-text person, prefill the first name with that
+    // label so the new account's display name matches and auto-links.
+    firstName: data.firstName || (data.linkName ? data.linkName.split(/\s+/)[0] : undefined),
     surname: data.surname,
+    linkName: data.linkName,
   });
   const origin = new URL(req.url).origin;
   return json({
@@ -32,5 +36,6 @@ export const POST = withAuth(async (user, req) => {
     role: link.role ?? null,
     firstName: link.firstName ?? null,
     surname: link.surname ?? null,
+    linkName: (link as any).linkName ?? null,
   });
 });

@@ -23,6 +23,7 @@ function SignupForm() {
   const [form, setForm] = useState({ firstName: "", surname: "", email: "", password: "", confirm: "", organization: "", role: "PM" });
   const [invitedOrg, setInvitedOrg] = useState<string | null>(null);
   const [invitedRole, setInvitedRole] = useState<string | null>(null);
+  const [invitedLinkName, setInvitedLinkName] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [err, setErr] = useState("");
@@ -43,6 +44,7 @@ function SignupForm() {
         const d = await res.json();
         setInvitedOrg(d.organization);
         setInvitedRole(d.role || null);
+        setInvitedLinkName(d.linkName || null);
         setForm((f) => ({
           ...f,
           organization: d.organization,
@@ -142,7 +144,7 @@ function SignupForm() {
     <>
       <h1>Create your account</h1>
       <p className="lead">
-        {joining ? <>You are joining <b>{invitedOrg}</b>.</> : "The first person to register an organization becomes its admin."}
+        {joining ? <>You are joining <b>{invitedOrg}</b>.{invitedLinkName ? <> Your account will be linked to work assigned to <b>{invitedLinkName}</b>.</> : null}</> : "The first person to register an organization becomes its admin."}
       </p>
       {inviteError && <div className="err" style={{ marginBottom: 12 }}>{inviteError} You can still create a new organization below, or ask your colleague for a fresh link.</div>}
       <form onSubmit={startSignup}>

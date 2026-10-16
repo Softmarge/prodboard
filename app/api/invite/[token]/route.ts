@@ -17,5 +17,6 @@ export async function GET(_req: Request, { params }: { params: { token: string }
     role: resolved.role,
     firstName: resolved.firstName,
     surname: resolved.surname,
+    linkName: resolved.linkName,
   });
 }

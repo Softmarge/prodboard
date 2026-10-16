@@ -13,6 +13,7 @@ export type ResolvedInvite = {
   role: InviteRole | null; // null = invitee chooses at signup
   firstName: string | null;
   surname: string | null;
+  linkName: string | null; // existing owner/reviewer label to link the new account to
   named: boolean; // a name was prefilled; named links are single-use
   used: boolean; // already consumed (only meaningful for named links)
 };
@@ -39,12 +40,13 @@ export async function resolveInvite(token: string): Promise<ResolvedInvite | nul
       role,
       firstName,
       surname,
+      linkName: link.linkName || null,
       named: !!(firstName || surname),
       used: !!link.usedAt,
     };
   }
   const org = await prisma.organization.findUnique({ where: { inviteToken: token } });
-  if (org) return { linkId: null, org: { id: org.id, name: org.name }, role: null, firstName: null, surname: null, named: false, used: false };
+  if (org) return { linkId: null, org: { id: org.id, name: org.name }, role: null, firstName: null, surname: null, linkName: null, named: false, used: false };
   return null;
 }
 
@@ -58,7 +60,7 @@ export const INVITE_USED_MESSAGE = "This invite link has already been used. Ask 
 // Create a fresh invite link carrying optional role and optional prefilled name.
 export async function createInviteLink(
   organizationId: string,
-  opts: { role?: InviteRole | null; firstName?: string | null; surname?: string | null }
+  opts: { role?: InviteRole | null; firstName?: string | null; surname?: string | null; linkName?: string | null }
 ) {
   return prisma.inviteLink.create({
     data: {
@@ -67,6 +69,7 @@ export async function createInviteLink(
       role: opts.role ?? null,
       firstName: opts.firstName?.trim() || null,
       surname: opts.surname?.trim() || null,
+      linkName: opts.linkName?.trim() || null,
     },
   });
 }

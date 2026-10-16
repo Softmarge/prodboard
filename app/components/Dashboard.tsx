@@ -1993,8 +1993,17 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
   const [role, setRole] = useState<InviteRoleChoice>(""); // "" = let them choose
   const [firstName, setFirstName] = useState("");
   const [surname, setSurname] = useState("");
+  const [linkName, setLinkName] = useState("");
+  const [cands, setCands] = useState<{ users: string[]; unlinked: { label: string; count: number }[] }>({ users: [], unlinked: [] });
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => { api("/api/invite/candidates").then((d) => setCands({ users: d.users || [], unlinked: d.unlinked || [] })).catch(() => {}); }, []);
+  // Warn if this person looks like someone already on ProdBoard.
+  const dupUser = cands.users.find((u) => {
+    const un = u.trim().toLowerCase();
+    return un === firstName.trim().toLowerCase() || (!!linkName && un === linkName.trim().toLowerCase());
+  });
 
   async function createLink() {
     setBusy(true);
@@ -2005,6 +2014,7 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
           role: role || null,
           firstName: firstName.trim() || undefined,
           surname: surname.trim() || undefined,
+          linkName: linkName.trim() || undefined,
         }),
       });
       setUrl(d.url);
@@ -2046,6 +2056,17 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
             <div className="hint" style={{ marginTop: 4 }}>Leave as “Let them choose” to not preselect a role. A link can never grant admin. You can also grant a task owner or reviewer viewer access later under Members.</div>
           </div>
 
+          {cands.unlinked.length > 0 && (
+            <div className="field">
+              <label htmlFor="invite-link">Link to an existing person <span className="hint">(optional)</span></label>
+              <select id="invite-link" value={linkName} onChange={(e) => { const v = e.target.value; onSetting(setLinkName)(v); if (v && !firstName.trim()) onSetting(setFirstName)(v.split(/\s+/)[0]); }}>
+                <option value="">Not linking to anyone</option>
+                {cands.unlinked.map((c) => <option key={c.label} value={c.label}>{c.label} ({c.count} task{c.count === 1 ? "" : "s"})</option>)}
+              </select>
+              <div className="hint" style={{ marginTop: 4 }}>People named on tasks who are not on ProdBoard yet. Pick one and their new account inherits those tasks when they sign up.</div>
+            </div>
+          )}
+
           <div className="two">
             <div className="field">
               <label htmlFor="invite-first">First name <span className="hint">(optional)</span></label>
@@ -2057,6 +2078,7 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
             </div>
           </div>
           <div className="hint" style={{ marginTop: -4, marginBottom: 10 }}>If you fill these, the signup form comes prefilled{named ? <> for <b>{named}</b></> : null}; they can still edit them.</div>
+          {dupUser && <div className="ownerbadge off" style={{ marginBottom: 10 }}>Someone named <b>{dupUser}</b> is already on ProdBoard. Check before inviting a duplicate.</div>}
 
           {!url ? (
             <button className="btn primary sm" onClick={createLink} disabled={busy} style={{ width: "100%" }}>{busy ? "Creating…" : "Create invite link"}</button>
@@ -2070,7 +2092,7 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
                 <button className="btn ghost sm" onClick={createLink} disabled={busy}>New link</button>
                 <button className="btn primary sm" onClick={copy}>Copy link</button>
               </div>
-              <div className="hint" style={{ marginTop: 10 }}>This link invites as <b>{inviteRoleLabel}</b>{named ? <>, prefilled for <b>{named}</b>. Create a separate link for each person you name.</> : <>. It is reusable, so anyone you share it with can join.</>}</div>
+              <div className="hint" style={{ marginTop: 10 }}>This link invites as <b>{inviteRoleLabel}</b>{named ? <>, prefilled for <b>{named}</b>. Create a separate link for each person you name.</> : <>. It is reusable, so anyone you share it with can join.</>}{linkName ? <> It will link the new account to tasks assigned to <b>{linkName}</b>.</> : null}</div>
             </>
           )}
         </div>
