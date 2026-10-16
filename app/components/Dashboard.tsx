@@ -135,6 +135,7 @@ export default function Dashboard({ me }: { me: Me }) {
   const [importOpen, setImportOpen] = useState(false);
   const [taskImportOpen, setTaskImportOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [notifPrefsOpen, setNotifPrefsOpen] = useState(false);
 
   // Product groups: Main (all) vs a selected personal group. The selection is
   // remembered server-side so it reopens on next login.
@@ -600,7 +601,9 @@ export default function Dashboard({ me }: { me: Me }) {
 
       {presenceOpen && <PresencePanel members={presence} meId={me.id} onClose={() => setPresenceOpen(false)} />}
 
-      {notifOpen && <NotificationPanel items={notifs} unread={notifUnread} onOpenItem={openNotif} onMarkAll={markAllNotifs} onClose={() => setNotifOpen(false)} />}
+      {notifOpen && <NotificationPanel items={notifs} unread={notifUnread} onOpenItem={openNotif} onMarkAll={markAllNotifs} onSettings={() => { setNotifOpen(false); setNotifPrefsOpen(true); }} onClose={() => setNotifOpen(false)} />}
+
+      {notifPrefsOpen && <NotificationsModal onClose={() => setNotifPrefsOpen(false)} flash={flash} />}
 
       {claimOpen && <ClaimModal productById={productById} onClose={() => setClaimOpen(false)} flash={flash} onClaimed={async () => { await reloadWork(); api("/api/me/claimable").then((c) => setClaimable(c.tasks || [])).catch(() => {}); }} />}
 
@@ -1800,6 +1803,78 @@ function TaskImportModal({ onClose, onDone, flash }: { onClose: () => void; onDo
   );
 }
 
+// ---------------- Notification settings ----------------
+function NotificationsModal({ onClose, flash }: { onClose: () => void; flash: (m: string) => void; }) {
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [digest, setDigest] = useState(false);
+  const [muted, setMuted] = useState<Set<string>>(new Set());
+  const [events, setEvents] = useState<{ key: string; label: string }[]>([]);
+  const [configured, setConfigured] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const d = await api("/api/me/notifications");
+        setDigest(!!d.emailDigest);
+        setMuted(new Set<string>(d.emailMuted || []));
+        setEvents(d.events || []);
+        setConfigured(d.emailConfigured !== false);
+      } catch (e) { flash((e as Error).message); }
+      setLoading(false);
+    })();
+  }, [flash]);
+
+  function toggleEvent(key: string) {
+    setMuted((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  }
+
+  async function save() {
+    setBusy(true);
+    try {
+      await api("/api/me/notifications", { method: "POST", body: JSON.stringify({ emailDigest: digest, emailMuted: Array.from(muted) }) });
+      flash("Notification settings saved");
+      onClose();
+    } catch (e) { flash((e as Error).message); setBusy(false); }
+  }
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Email notifications</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          {loading ? <div className="hint">Loading…</div> : (
+            <>
+              <label className="rolechk" style={{ alignItems: "flex-start" }}>
+                <input type="checkbox" checked={digest} onChange={(e) => setDigest(e.target.checked)} />
+                <span>
+                  <b>Notify me by email</b>
+                  <div className="hint" style={{ marginTop: 2 }}>Updates are batched and sent at most once every 15 minutes, so related events arrive in a single email rather than one per event. In-app notifications are unaffected.</div>
+                </span>
+              </label>
+              {!configured && <div className="banner-ok" style={{ marginTop: 10 }}>Email sending is not set up on the server yet, so these will take effect once it is. Your choices are still saved.</div>}
+              <div style={{ marginTop: 14, opacity: digest ? 1 : 0.5, pointerEvents: digest ? "auto" : "none" }}>
+                <div className="hint" style={{ marginBottom: 6 }}>Email me about:</div>
+                {events.map((ev) => (
+                  <label key={ev.key} className="rolechk">
+                    <input type="checkbox" checked={!muted.has(ev.key)} onChange={() => toggleEvent(ev.key)} />
+                    <span>{ev.label}</span>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="dfoot">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={save} disabled={busy || loading}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ---------------- Invite ----------------
 // ---------------- Product groups ----------------
 function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }: { groups: Group[]; products: Product[]; onClose: () => void; onChanged: () => Promise<void> | void; onActivate: (id: string) => void; flash: (m: string) => void; }) {
@@ -2021,12 +2096,12 @@ function PresencePanel({ members, meId, onClose }: { members: PresenceMember[]; 
   );
 }
 
-function NotificationPanel({ items, unread, onOpenItem, onMarkAll, onClose }: { items: { id: string; type: string; taskId: string | null; text: string; read: boolean; createdAt: string }[]; unread: number; onOpenItem: (n: { id: string; taskId: string | null; read: boolean }) => void; onMarkAll: () => void; onClose: () => void; }) {
+function NotificationPanel({ items, unread, onOpenItem, onMarkAll, onSettings, onClose }: { items: { id: string; type: string; taskId: string | null; text: string; read: boolean; createdAt: string }[]; unread: number; onOpenItem: (n: { id: string; taskId: string | null; read: boolean }) => void; onMarkAll: () => void; onSettings: () => void; onClose: () => void; }) {
   return (
     <>
       <div className="hlscrim" onClick={onClose} />
       <div className="presencepanel" role="dialog" aria-label="Notifications">
-        <div className="pp-head"><b>Notifications</b><div style={{ display: "flex", alignItems: "center", gap: 8 }}>{unread > 0 ? <button className="linklike" onClick={onMarkAll}>Mark all read</button> : null}<button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div></div>
+        <div className="pp-head"><b>Notifications</b><div style={{ display: "flex", alignItems: "center", gap: 8 }}>{unread > 0 ? <button className="linklike" onClick={onMarkAll}>Mark all read</button> : null}<button className="linklike" onClick={onSettings} title="Email notification settings">Settings</button><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div></div>
         <div className="pp-body">
           {!items.length ? <div className="hint" style={{ padding: "6px 2px" }}>No notifications yet.</div> : items.map((n) => (
             <button key={n.id} className={`notif${n.read ? "" : " unread"}`} onClick={() => onOpenItem(n)}>

@@ -132,6 +132,8 @@ model User {
   capPm          Boolean      @default(false) // also a PM (can manage products/tasks)
   capOwner       Boolean      @default(false) // also a Task owner
   capReviewer    Boolean      @default(false) // also a Reviewer
+  emailDigest    Boolean      @default(false) // master switch: send me email notifications (opt-in)
+  emailMuted     String[]     @default([]) // event keys this user has turned off for email
   activeGroupId  String? // last selected product group; null = Main (all products)
   lastSeenAt     DateTime? // updated by a heartbeat; drives online presence and last seen
   hlName1        String? // personal highlight preset 1 name
@@ -258,10 +260,12 @@ model Notification {
   taskId         String?
   text           String
   read           Boolean  @default(false)
+  emailedAt      DateTime? // when this notification was included in a digest email (null = not yet)
   createdAt      DateTime @default(now())
 
   @@index([userId, read])
   @@index([userId, createdAt])
+  @@index([userId, emailedAt])
 }
 
 // A private, per-user highlight color on a task. Only the owner sees it.
