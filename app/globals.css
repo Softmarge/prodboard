@@ -138,18 +138,17 @@ main{padding:16px;max-width:1600px;margin:0 auto}
 .card .title{font-weight:600;min-width:0;line-height:1.3}
 .card .meta{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:8px;color:var(--muted);font-size:12px}
 .card .meta .who{color:var(--fg)}
-/* Newly created (within a day): border accent + bold title, no fill. The left
-   edge stays the status stripe, so the accent frames the other three sides. */
-.card.isnew,.card.isnew:hover{border-top-color:var(--accent);border-right-color:var(--accent);border-bottom-color:var(--accent)}
-.card.isnew .title{font-weight:700}
-.rowbtn.isnew .title{font-weight:700}
-.rowbtn.isnew td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
-.pcard.isnew{border-color:var(--accent)}
-.pcard.isnew .pname-btn{font-weight:700}
-.prowx.isnew{box-shadow:inset 3px 0 0 var(--accent)}
-.prowx.isnew .pname-btn{font-weight:700}
-.pdtask.isnew,.pdtask.isnew:hover{border-top-color:var(--accent);border-right-color:var(--accent);border-bottom-color:var(--accent)}
-.pdtask.isnew .title{font-weight:700}
+/* Newly created: accent border + bold title, no fill. The accent strength
+   follows --new (1 at creation, decaying to 0 over 2h), so it fades out
+   gradually. The card's left edge stays the status stripe. */
+.card.isnew,.rowbtn.isnew,.pcard.isnew,.prowx.isnew,.pdtask.isnew{
+  --new-border:color-mix(in srgb,var(--accent) calc(var(--new,1)*100%),var(--border));
+  --new-line:color-mix(in srgb,var(--accent) calc(var(--new,1)*100%),transparent);
+}
+.card.isnew,.card.isnew:hover,.pdtask.isnew,.pdtask.isnew:hover{border-top-color:var(--new-border);border-right-color:var(--new-border);border-bottom-color:var(--new-border);transition:border-color .8s linear}
+.pcard.isnew{border-color:var(--new-border);transition:border-color .8s linear}
+.rowbtn.isnew td:first-child,.prowx.isnew{box-shadow:inset 3px 0 0 var(--new-line);transition:box-shadow .8s linear}
+.card.isnew .title,.rowbtn.isnew .title,.pcard.isnew .pname-btn,.prowx.isnew .pname-btn,.pdtask.isnew .title{font-weight:700}
 .sr{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-soft);padding:1px 6px;border-radius:5px}
 
 /* status chip */
