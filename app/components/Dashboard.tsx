@@ -723,7 +723,7 @@ function KanbanBoard({ tasks, activity, asOf, cmpTasks, dispName, canWrite, onOp
                 const e = effectiveStatus(t, asOf || null, activity);
                 const c = hl.color(t.id);
                 return (
-                  <div key={t.id} className="card" draggable={canDrag}
+                  <div key={t.id} className={`card${isNew(t.createdAt) ? " isnew" : ""}`} draggable={canDrag}
                     style={{ ["--sc" as string]: `var(${e.overdue ? "--s-overdue" : statusMeta(t.status).colorVar})`, ...(c ? { background: hlTint(c) } : {}) }}
                     onDragStart={(ev) => { drag.current = t.id; try { ev.dataTransfer.setData("text/plain", t.id); ev.dataTransfer.effectAllowed = "move"; } catch {} }}
                     onDragEnd={() => { drag.current = null; }}
@@ -742,13 +742,21 @@ function KanbanBoard({ tasks, activity, asOf, cmpTasks, dispName, canWrite, onOp
   );
 }
 
+// Recently created items (within a day) get a "new" emphasis: a border accent
+// and bold title, no background fill. The flag ages out naturally on reload.
+function isNew(createdAt?: string): boolean {
+  if (!createdAt) return false;
+  const t = new Date(createdAt).getTime();
+  return !isNaN(t) && Date.now() - t < 24 * 60 * 60 * 1000;
+}
+
 function GridBoard({ tasks, activity, asOf, cmpTasks, dispName, onOpenTask }: { tasks: Task[]; activity: Activity[]; asOf: string; cmpTasks: (a: Task, b: Task) => number; dispName: (id: string | null) => string; onOpenTask: (id: string) => void; }) {
   const hl = useHl();
   const arr = [...tasks].sort(cmpTasks);
   return (
     <div className="board-grid">
       {arr.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const c = hl.color(t.id); return (
-        <div key={t.id} className="card" style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})`, ...(c ? { background: hlTint(c) } : {}) }} onClick={() => onOpenTask(t.id)}>
+        <div key={t.id} className={`card${isNew(t.createdAt) ? " isnew" : ""}`} style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})`, ...(c ? { background: hlTint(c) } : {}) }} onClick={() => onOpenTask(t.id)}>
           <div className="tt-row"><div className="title">{t.title}</div><span className="tt-actions"><PrBadge t={t} /><HighlightDot color={c} onClick={(ev) => hl.open(t.id, ev)} /></span></div>
           <div style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}><Chip status={e.status} />{t.pending ? <span className="awaitpill">Pending</span> : null}</div>
           {cardMeta(t, dispName, e.overdue)}
@@ -767,7 +775,7 @@ function ListBoard({ tasks, activity, asOf, cmpTasks, dispName, onOpenTask }: { 
         <thead><tr><th aria-label="Highlight"></th><th>Pri</th><th>Task</th><th>Product</th><th>Owner</th><th>Team</th><th>Status</th><th>Timeline</th><th>Request</th><th>Last update</th></tr></thead>
         <tbody>
           {arr.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const lu = lastUpdateFor(t.id, activity); const c = hl.color(t.id); return (
-            <tr key={t.id} className="rowbtn" style={c ? { background: hlTint(c) } : undefined} onClick={() => onOpenTask(t.id)}>
+            <tr key={t.id} className={`rowbtn${isNew(t.createdAt) ? " isnew" : ""}`} style={c ? { background: hlTint(c) } : undefined} onClick={() => onOpenTask(t.id)}>
               <td><HighlightDot color={c} onClick={(ev) => hl.open(t.id, ev)} /></td>
               <td><PrBadge t={t} /></td>
               <td><div className="title">{t.title}{t.pending ? <span className="awaitpill" style={{ marginLeft: 6 }}>Pending</span> : null}</div>{t.blocker ? <div className="hint" style={{ color: "var(--s-overdue)" }}>⚑ {t.blocker}</div> : null}</td>
@@ -837,7 +845,7 @@ function Sheet({ tasks, asOf, activity, dispName, onOpenTask }: { tasks: Task[];
         <thead><tr><th aria-label="Highlight"></th><th>Task</th><th>Product</th><th>Team</th><th>Owner</th><th>Status</th><th>Timeline</th><th>Request</th><th>Last update</th></tr></thead>
         <tbody>
           {sorted.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const lu = lastUpdateFor(t.id, activity); const c = hl.color(t.id); return (
-            <tr key={t.id} className="rowbtn" style={c ? { background: hlTint(c) } : undefined} onClick={() => onOpenTask(t.id)}>
+            <tr key={t.id} className={`rowbtn${isNew(t.createdAt) ? " isnew" : ""}`} style={c ? { background: hlTint(c) } : undefined} onClick={() => onOpenTask(t.id)}>
               <td><HighlightDot color={c} onClick={(ev) => hl.open(t.id, ev)} /></td>
               <td><div className="title">{t.title}</div>{t.blocker ? <div className="hint" style={{ color: "var(--s-overdue)" }}>⚑ {t.blocker}</div> : null}</td>
               <td>{dispName(t.productId)}</td><td>{t.team}</td><td>{t.owner || "-"}</td>
@@ -1059,7 +1067,7 @@ function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "card
       ) : layout === "cards" ? (
         <div className="pgrid">
           {list.map((p) => { const n = count(p.id); return (
-            <div key={p.id} className={`pcard${p.decommissioned ? " decom" : ""}`}>
+            <div key={p.id} className={`pcard${p.decommissioned ? " decom" : ""}${isNew(p.createdAt) ? " isnew" : ""}`}>
               <button className="pname-btn" onClick={() => onDetail(p.id)} title="View tasks">{productDisplay(p)}</button>
               <div className="pmeta">Manager: {p.pm || "unassigned"}{p.type ? <> · <span className="ptag" style={{ margin: 0 }}>{p.type}</span></> : null}</div>
               <div className="pmeta tnum">{n} task{n === 1 ? "" : "s"}{p.decommissioned ? <span className="decbadge">Decommissioned</span> : null}</div>
@@ -1070,7 +1078,7 @@ function ProductsView(props: { products: Product[]; tasks: Task[]; layout: "card
       ) : (
         <div className="plist">
           {list.map((p) => { const n = count(p.id); return (
-            <div key={p.id} className={`prowx${p.decommissioned ? " decom" : ""}`}>
+            <div key={p.id} className={`prowx${p.decommissioned ? " decom" : ""}${isNew(p.createdAt) ? " isnew" : ""}`}>
               <div style={{ flex: 1, minWidth: 140 }}>
                 <div><button className="pname-btn" onClick={() => onDetail(p.id)} title="View tasks">{productDisplay(p)}</button>{p.decommissioned ? <span className="decbadge">Decommissioned</span> : null}</div>
                 <div className="hint">Manager: {p.pm || "unassigned"} · {n} task{n === 1 ? "" : "s"}</div>
@@ -1109,7 +1117,7 @@ function ProductDetail({ product, tasks, activity, asOf, canWrite, onClose, onOp
           ) : (
             <div className="pdlist">
               {list.map((t) => { const e = effectiveStatus(t, asOf || null, activity); const c = hl.color(t.id); return (
-                <button key={t.id} className="pdtask" style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})`, ...(c ? { background: hlTint(c) } : {}) }} onClick={() => onOpenTask(t.id)}>
+                <button key={t.id} className={`pdtask${isNew(t.createdAt) ? " isnew" : ""}`} style={{ ["--sc" as string]: `var(${statusMeta(e.status).colorVar})`, ...(c ? { background: hlTint(c) } : {}) }} onClick={() => onOpenTask(t.id)}>
                   <div className="pdtask-top"><span className="title">{t.title}</span><span className="tt-actions"><Chip status={e.status} /><HighlightDot color={c} onClick={(ev) => hl.open(t.id, ev)} /></span></div>
                   {t.context ? <div className="ctxpreview">{t.context}</div> : null}
                   <div className="meta"><span className="who">{t.owner || "-"}</span><span>{t.team}</span><span className="tnum"><span style={{ opacity: 0.7 }}>Timeline:</span> {timelineText(t)}</span>{t.serviceRequest ? <span className="sr">{t.serviceRequest}</span> : null}</div>
