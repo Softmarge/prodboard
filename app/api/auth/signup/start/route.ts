@@ -18,6 +18,7 @@ const Body = z.object({
   organization: z.string().min(1).max(120).optional(),
   role: z.enum(["PM", "VIEWER", "TASK_OWNER", "REVIEWER"]).optional(),
   inviteToken: z.string().min(1).optional(),
+  acceptedTerms: z.boolean().optional(),
 });
 
 function code4() {
@@ -40,6 +41,8 @@ export async function POST(req: Request) {
   }
   const pwProblem = passwordProblem(data.password);
   if (pwProblem) return error(pwProblem);
+
+  if (data.acceptedTerms !== true) return error("Please accept the Terms of Service and Privacy Policy to continue.");
 
   if (!emailConfigured()) {
     return error("Email verification is not configured on the server yet. Contact your admin.", 503);

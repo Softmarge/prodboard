@@ -30,6 +30,7 @@ function SignupForm() {
   const [busy, setBusy] = useState(false);
   const [resentMsg, setResentMsg] = useState("");
   const [relayed, setRelayed] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -61,6 +62,7 @@ function SignupForm() {
     const pwProblem = passwordProblem(form.password);
     if (pwProblem) { setErr(pwProblem); return; }
     if (form.password !== form.confirm) { setErr("Passwords do not match."); return; }
+    if (!accepted) { setErr("Please accept the Terms of Service and Privacy Policy to continue."); return; }
     setErr(""); setBusy(true);
     try {
       const res = await fetch("/api/auth/signup/start", {
@@ -68,7 +70,7 @@ function SignupForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           firstName: form.firstName, surname: form.surname, email: form.email, password: form.password,
-          organization: form.organization, role: form.role,
+          organization: form.organization, role: form.role, acceptedTerms: accepted,
           ...(invite ? { inviteToken: invite } : {}),
         }),
       });
@@ -193,8 +195,12 @@ function SignupForm() {
           <label htmlFor="confirm">Confirm password</label>
           <PasswordInput id="confirm" autoComplete="new-password" value={form.confirm} onChange={(v) => set("confirm", v)} />
         </div>
+        <label className="chkline" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, margin: "4px 0 10px" }}>
+          <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} style={{ marginTop: 2 }} />
+          <span>I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</span>
+        </label>
         {err && <div className="err">{err}</div>}
-        <button className="btn primary" type="submit" disabled={busy} style={{ width: "100%", marginTop: 6 }}>
+        <button className="btn primary" type="submit" disabled={busy || !accepted} style={{ width: "100%", marginTop: 6 }}>
           {busy ? "Sending code…" : "Continue"}
         </button>
       </form>

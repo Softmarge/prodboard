@@ -249,6 +249,8 @@ export default function Landing({ signedIn }: { signedIn: boolean }) {
           <div className="lp-footer-links">
             <Link href="/login">Sign in</Link>
             <Link href="/signup">Get started</Link>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
           </div>
         </div>
       </footer>

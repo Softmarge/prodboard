@@ -235,6 +235,17 @@ table.sheet .due.late{color:var(--s-overdue);font-weight:600}
 .authcard p.lead{color:var(--muted);margin:0 0 18px}
 .authcard .field input,.authcard .field select{background:var(--surface-2)}
 .authcard .foot{margin-top:16px;font-size:13px;color:var(--muted);text-align:center}
+.legalwrap{max-width:780px;margin:0 auto;padding:32px 20px 64px}
+.legalhead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+.legal-logo{font-weight:700;color:var(--fg);text-decoration:none;letter-spacing:.2px}
+.legalwrap h1{font-size:26px;margin:0 0 4px}
+.legalwrap .legal-meta{color:var(--muted);font-size:13px;margin:0 0 18px}
+.legalwrap h2{font-size:17px;margin:26px 0 8px}
+.legalwrap p,.legalwrap li{color:var(--fg);line-height:1.6;font-size:14px}
+.legalwrap ul{padding-left:20px;margin:6px 0}
+.legalwrap a{color:var(--accent)}
+.legal-banner{border:1px solid var(--accent);background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--fg);margin-bottom:8px}
+.legal-foot{margin-top:40px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap}
 .banner-ok{background:color-mix(in srgb,var(--s-complete) 12%,transparent);border:1px solid color-mix(in srgb,var(--s-complete) 35%,transparent);color:var(--s-complete);padding:9px 12px;border-radius:var(--radius-sm);font-size:13px;margin-bottom:14px}
 
 @media (max-width:520px){ .two{grid-template-columns:1fr} .logo .sub{display:none} .pminput{width:100px} }
