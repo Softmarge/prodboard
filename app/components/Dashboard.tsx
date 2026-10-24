@@ -420,10 +420,12 @@ export default function Dashboard({ me }: { me: Me }) {
   }
 
   const drawerTask = drawerTaskId ? tasks.find((t) => t.id === drawerTaskId) || null : null;
+  const staging = process.env.NEXT_PUBLIC_APP_ENV === "staging";
 
   return (
     <HLContext.Provider value={hlCtx}>
       <div className="app">
+      {staging && <div className="stagingbar">Staging environment, for testing only. Your real work lives at <a href="https://prodboard.app">prodboard.app</a>.</div>}
       <div className="brand">
         <Link href="/" className="logo" style={{ textDecoration: "none", color: "inherit" }} title="Go to ProdBoard home" aria-label="ProdBoard home">
           <BrandLogo height={30} sub={orgName ? `Organization: ${orgName}` : "Tech delivery visibility"} />

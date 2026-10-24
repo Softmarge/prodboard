@@ -43,6 +43,14 @@
 *{box-sizing:border-box}
 html,body{height:100%}
 .app{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+.stagingbar{flex:0 0 auto;background:#0f7a3d;color:#fff;text-align:center;padding:5px 12px;font-size:12.5px;font-weight:500}
+.stagingbar a{color:#fff;text-decoration:underline;font-weight:700}
+.stagingblock{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--bg)}
+.stagingblock-card{max-width:440px;text-align:center;background:var(--surface);border:1px solid var(--border);border-top:4px solid #0f7a3d;border-radius:14px;padding:28px 26px;box-shadow:var(--shadow-lg)}
+.stagingblock-badge{display:inline-block;background:#0f7a3d;color:#fff;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:2px 10px;border-radius:999px;margin-bottom:12px}
+.stagingblock-card h1{font-size:20px;margin:0 0 8px}
+.stagingblock-card p{color:var(--muted);line-height:1.6;font-size:14px;margin:0 0 18px}
+.stagingblock-foot{margin-top:16px;font-size:12px;color:var(--faint);line-height:1.5}
 .appscroll{flex:1 1 auto;overflow-y:auto;min-height:0}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--ui);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
 h1,h2,h3{margin:0;font-weight:600}
