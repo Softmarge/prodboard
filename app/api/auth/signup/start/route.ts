@@ -39,6 +39,13 @@ export async function POST(req: Request) {
   } catch {
     return error("Please fill in your first name, surname, a valid email, a password, and an organization.");
   }
+  // Invite-only by default. Set NEXT_PUBLIC_SIGNUP_OPEN=true to allow open
+  // sign-ups (anyone creating a new organization) again.
+  const signupOpen = process.env.NEXT_PUBLIC_SIGNUP_OPEN === "true";
+  if (!data.inviteToken && !signupOpen) {
+    return error("Sign-ups are by invitation only. Ask an admin to send you an invite link.", 403);
+  }
+
   const pwProblem = passwordProblem(data.password);
   if (pwProblem) return error(pwProblem);
 

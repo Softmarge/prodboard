@@ -109,6 +109,7 @@ function SignupForm() {
   }
 
   const joining = !!invitedOrg;
+  const signupOpen = process.env.NEXT_PUBLIC_SIGNUP_OPEN === "true";
 
   if (step === "code") {
     return (
@@ -138,6 +139,16 @@ function SignupForm() {
           {" · "}
           <button className="linklike" type="button" onClick={() => { setStep("form"); setErr(""); setCode(""); }}>Change details</button>
         </div>
+      </>
+    );
+  }
+
+  if (!invite && !signupOpen) {
+    return (
+      <>
+        <h1>By invitation only</h1>
+        <p className="lead">ProdBoard accounts are created from an invite. Ask your workspace admin to send you an invite link, then open it here to sign up.</p>
+        <div className="foot">Already have an account? <Link href="/login">Sign in</Link></div>
       </>
     );
   }
