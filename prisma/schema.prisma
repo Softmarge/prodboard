@@ -41,6 +41,8 @@ model Organization {
   inviteLinks   InviteLink[]
   productGroups ProductGroup[]
   featureAlerts FeatureAlert[]
+  teamList        Team[]
+  managerRequests ManagerRequest[]
 }
 
 // A targeted, dismissible in-app announcement for rolling out a feature to the
@@ -134,6 +136,10 @@ model User {
   capReviewer    Boolean      @default(false) // also a Reviewer
   emailDigest    Boolean      @default(false) // master switch: send me email notifications (opt-in)
   emailMuted     String[]     @default([]) // event keys this user has turned off for email
+  // Exec (org-wide read-only, the VIEWER role) view permissions, set by an admin.
+  execViewMembers  Boolean    @default(true)
+  execViewProjects Boolean    @default(true)
+  execViewTasks    Boolean    @default(true)
   activeGroupId  String? // last selected product group; null = Main (all products)
   lastSeenAt     DateTime? // updated by a heartbeat; drives online presence and last seen
   hlName1        String? // personal highlight preset 1 name
@@ -153,6 +159,9 @@ model User {
   ownedTasks    Task[]              @relation("OwnedTasks")
   reviewedTasks Task[]              @relation("ReviewedTasks")
   notifications Notification[]
+  teamMemberships TeamMembership[]
+  teamLeads       TeamLead[]
+  managerRequests ManagerRequest[]
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -205,6 +214,8 @@ model Product {
   pm             String? // managing PM (display name)
   type           String? // single platform type, e.g. "Mobile App"; display name = name + " " + type
   decommissioned Boolean      @default(false) // retired, hidden from default views; never hard-deleted
+  teamId         String? // the team this project belongs to (null during transition)
+  team           Team?        @relation(fields: [teamId], references: [id], onDelete: SetNull)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy      String?
@@ -213,6 +224,7 @@ model Product {
   tasks Task[]
 
   @@index([organizationId])
+  @@index([teamId])
 }
 
 model Task {
@@ -300,4 +312,77 @@ model Activity {
   @@index([organizationId])
   @@index([taskId])
   @@index([ts])
+}
+
+// A team within an organization. Teams nest via parentTeamId (start with 2
+// levels). "kind" is a display label the admin sets per team: Product or Project.
+model Team {
+  id             String       @id @default(cuid())
+  name           String
+  kind           String       @default("PRODUCT") // PRODUCT | PROJECT (display label only)
+  parentTeamId   String? // null = top-level team
+  parent         Team?        @relation("TeamHierarchy", fields: [parentTeamId], references: [id], onDelete: SetNull)
+  children       Team[]       @relation("TeamHierarchy")
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      String?
+  createdAt      DateTime     @default(now())
+
+  memberships TeamMembership[]
+  leads       TeamLead[]
+  products    Product[]
+
+  @@index([organizationId])
+  @@index([parentTeamId])
+}
+
+// Membership of a user in a team. A user can be in several teams, with exactly
+// one marked primary (enforced in the app). The primary team is the default for
+// things like which team a project they create belongs to.
+model TeamMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, teamId])
+  @@index([teamId])
+}
+
+// A read-only oversight assignment: this user leads this team and all its
+// sub-teams. The admin chooses which categories they may view. A lead can only
+// be set over a team they are a member of.
+model TeamLead {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId       String
+  team         Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  viewMembers  Boolean  @default(true)
+  viewProjects Boolean  @default(true)
+  viewTasks    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, teamId])
+  @@index([teamId])
+}
+
+// A request from a Task Owner to be granted the Manager role, reviewed by an admin.
+model ManagerRequest {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  status         String       @default("pending") // pending | approved | declined
+  note           String? // optional message from requester or admin
+  decidedBy      String? // admin display name
+  decidedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, status])
+  @@index([userId])
 }
