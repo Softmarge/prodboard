@@ -41,8 +41,8 @@ model Organization {
   inviteLinks   InviteLink[]
   productGroups ProductGroup[]
   featureAlerts FeatureAlert[]
-  teamList        Team[]
-  managerRequests ManagerRequest[]
+  teamList Team[]
+  threads  Thread[]
 }
 
 // A targeted, dismissible in-app announcement for rolling out a feature to the
@@ -138,10 +138,6 @@ model User {
   capReviewer    Boolean      @default(false) // also a Reviewer
   emailDigest    Boolean      @default(false) // master switch: send me email notifications (opt-in)
   emailMuted     String[]     @default([]) // event keys this user has turned off for email
-  // Exec (org-wide read-only, the VIEWER role) view permissions, set by an admin.
-  execViewMembers  Boolean    @default(true)
-  execViewProjects Boolean    @default(true)
-  execViewTasks    Boolean    @default(true)
   activeGroupId  String? // last selected product group; null = Main (all products)
   lastSeenAt     DateTime? // updated by a heartbeat; drives online presence and last seen
   hlName1        String? // personal highlight preset 1 name
@@ -163,7 +159,9 @@ model User {
   notifications Notification[]
   teamMemberships TeamMembership[]
   teamLeads       TeamLead[]
-  managerRequests ManagerRequest[]
+  assignedTasks   Task[]           @relation("AssignerTasks")
+  messages        Message[]
+  defaultReviewerForTeams Team[]   @relation("TeamDefaultReviewer")
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -235,6 +233,18 @@ model Task {
   context        String? // optional intro/description for stakeholders
   productId      String?
   product        Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  teamId         String? // owning team (new teams model; null during transition)
+  teamRef        Team?        @relation("TeamTasks", fields: [teamId], references: [id], onDelete: SetNull)
+  assignerUserId String? // who created/assigned and manages this task
+  assignerUser   User?        @relation("AssignerTasks", fields: [assignerUserId], references: [id], onDelete: SetNull)
+  targetTeamId   String? // set for a cross-team request: the receiving team
+  targetTeam     Team?        @relation("TeamIncomingRequests", fields: [targetTeamId], references: [id], onDelete: SetNull)
+  parentTaskId   String? // set for a child task spawned from a request
+  parentTask     Task?        @relation("TaskChildren", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  childTasks     Task[]       @relation("TaskChildren")
+  requestState   String? // null = normal task; Submitted|Accepted|Declined|Delivered|Confirmed
+  committedDate  DateTime? // date the receiving holder committed to
+  declineReason  String? // reason given if a request was declined
   team           String
   owner          String // person OR team/function (free text label as typed)
   ownerUserId    String? // resolved account once linked; drives My Tasks and owner actions
@@ -262,6 +272,9 @@ model Task {
 
   @@index([organizationId])
   @@index([productId])
+  @@index([teamId])
+  @@index([targetTeamId])
+  @@index([parentTaskId])
 }
 
 // An in-app notification for one recipient (owner-done, confirm, send-back, assigned).
@@ -325,14 +338,20 @@ model Team {
   parentTeamId   String? // null = top-level team
   parent         Team?        @relation("TeamHierarchy", fields: [parentTeamId], references: [id], onDelete: SetNull)
   children       Team[]       @relation("TeamHierarchy")
+  memberVisibility   String   @default("ALL") // ALL = members see all team tasks; OWN = only their own
+  membersSeeSubteams Boolean  @default(false) // members (not just the lead) see sub-teams' tasks
+  defaultReviewerId  String? // optional default reviewer for new tasks in this team
+  defaultReviewer    User?    @relation("TeamDefaultReviewer", fields: [defaultReviewerId], references: [id], onDelete: SetNull)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdBy      String?
   createdAt      DateTime     @default(now())
 
-  memberships TeamMembership[]
-  leads       TeamLead[]
-  products    Product[]
+  memberships      TeamMembership[]
+  leads            TeamLead[]
+  products         Product[]
+  tasks            Task[]      @relation("TeamTasks")
+  incomingRequests Task[]      @relation("TeamIncomingRequests")
 
   @@index([organizationId])
   @@index([parentTeamId])
@@ -348,43 +367,57 @@ model TeamMembership {
   teamId    String
   team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   isPrimary Boolean  @default(false)
+  status    String   @default("active") // active | pending (self-chosen at signup, awaiting lead approval)
   createdAt DateTime @default(now())
 
   @@unique([userId, teamId])
   @@index([teamId])
 }
 
-// A read-only oversight assignment: this user leads this team and all its
-// sub-teams. The admin chooses which categories they may view. A lead can only
-// be set over a team they are a member of.
+// The lead of a team: sees and edits everything in this team and all its
+// sub-teams, and manages the team's members and settings. A lead must be a
+// member of the team they lead (enforced in the app).
 model TeamLead {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  teamId       String
-  team         Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  viewMembers  Boolean  @default(true)
-  viewProjects Boolean  @default(true)
-  viewTasks    Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 
   @@unique([userId, teamId])
   @@index([teamId])
 }
 
-// A request from a Task Owner to be granted the Manager role, reviewed by an admin.
-model ManagerRequest {
+// A conversation thread attached to a context. Task (and request) threads come
+// first; team channels and direct messages are later context types on the same
+// tables, so this is the narrow first version of chat.
+model Thread {
   id             String       @id @default(cuid())
-  userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  status         String       @default("pending") // pending | approved | declined
-  note           String? // optional message from requester or admin
-  decidedBy      String? // admin display name
-  decidedAt      DateTime?
+  contextType    String // task (later: channel, dm)
+  contextId      String // id of the task/request this thread hangs off
   createdAt      DateTime     @default(now())
 
-  @@index([organizationId, status])
-  @@index([userId])
+  messages Message[]
+
+  @@unique([contextType, contextId])
+  @@index([organizationId])
+}
+
+// A single message in a thread. Separate from the Activity log: the log records
+// events, messages are conversation.
+model Message {
+  id        String    @id @default(cuid())
+  threadId  String
+  thread    Thread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  mentions  String[]  @default([]) // user ids @-mentioned in this message
+  createdAt DateTime  @default(now())
+  editedAt  DateTime?
+
+  @@index([threadId])
 }
