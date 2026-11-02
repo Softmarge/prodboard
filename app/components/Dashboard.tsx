@@ -214,15 +214,39 @@ export default function Dashboard({ me }: { me: Me }) {
 
   // Active group drives a product-set lens over every task view. Null = Main.
   const activeGroup = useMemo(() => (groupMode && selectedGroupId ? groups.find((g) => g.id === selectedGroupId) || null : null), [groupMode, selectedGroupId, groups]);
-  const groupProductIds = useMemo(() => (activeGroup ? new Set(activeGroup.productIds) : null), [activeGroup]);
-  const inGroup = useCallback((pid: string | null) => !groupProductIds || (!!pid && groupProductIds.has(pid)), [groupProductIds]);
-  const scopedProducts = useMemo(() => (groupProductIds ? products.filter((p) => groupProductIds.has(p.id)) : products), [products, groupProductIds]);
-  const scopedTasks = useMemo(() => (groupProductIds ? tasks.filter((t) => inGroup(t.productId)) : tasks), [tasks, groupProductIds, inGroup]);
+  // A smart group gathers tasks by product, by owner (dynamic, so new tasks for
+  // that owner appear automatically), and by individually pinned task id.
+  const groupMatch = useMemo(() => {
+    if (!activeGroup) return null;
+    const prods = new Set(activeGroup.productIds || []);
+    const owners = new Set((activeGroup.ownerNames || []).map(nn));
+    const tids = new Set(activeGroup.taskIds || []);
+    return (t: Task) => (!!t.productId && prods.has(t.productId)) || (!!t.owner && owners.has(nn(t.owner))) || tids.has(t.id);
+  }, [activeGroup]);
+  const scopedTasks = useMemo(() => (groupMatch ? tasks.filter(groupMatch) : tasks), [tasks, groupMatch]);
+  // Products in scope: those explicitly in the group plus any the scoped tasks belong to.
+  const scopedProducts = useMemo(() => {
+    if (!activeGroup) return products;
+    const s = new Set(activeGroup.productIds || []);
+    scopedTasks.forEach((t) => { if (t.productId) s.add(t.productId); });
+    return products.filter((p) => s.has(p.id));
+  }, [products, activeGroup, scopedTasks]);
   const scopedActivity = useMemo(() => {
-    if (!groupProductIds) return activity;
+    if (!activeGroup) return activity;
     const ids = new Set(scopedTasks.map((t) => t.id));
     return activity.filter((a) => a.taskId && ids.has(a.taskId));
-  }, [activity, groupProductIds, scopedTasks]);
+  }, [activity, activeGroup, scopedTasks]);
+  // How many tasks each group currently matches, for the pill badges.
+  const groupCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const g of groups) {
+      const prods = new Set(g.productIds || []);
+      const owners = new Set((g.ownerNames || []).map(nn));
+      const tids = new Set(g.taskIds || []);
+      m[g.id] = tasks.filter((t) => (!!t.productId && prods.has(t.productId)) || (!!t.owner && owners.has(nn(t.owner))) || tids.has(t.id)).length;
+    }
+    return m;
+  }, [groups, tasks]);
 
   // If the selected group vanished (deleted, or not ours), fall back to Main.
   useEffect(() => {
@@ -477,8 +501,8 @@ export default function Dashboard({ me }: { me: Me }) {
               ) : (
                 <div className="grouppills">
                   {groups.map((g) => (
-                    <button key={g.id} className={`gpill${selectedGroupId === g.id ? " on" : ""}`} onClick={() => pickGroup(g.id)} title={`${g.productIds.length} product${g.productIds.length === 1 ? "" : "s"}`}>
-                      {g.name}<span className="gcount">{g.productIds.length}</span>
+                    <button key={g.id} className={`gpill${selectedGroupId === g.id ? " on" : ""}`} onClick={() => pickGroup(g.id)} title={`${groupCounts[g.id] ?? 0} task${(groupCounts[g.id] ?? 0) === 1 ? "" : "s"}`}>
+                      {g.name}<span className="gcount">{groupCounts[g.id] ?? 0}</span>
                     </button>
                   ))}
                 </div>
@@ -603,7 +627,7 @@ export default function Dashboard({ me }: { me: Me }) {
       {membersOpen && <MembersModal meId={me.id} onClose={() => setMembersOpen(false)} flash={flash} />}
       {alertsManageOpen && <FeatureAlertsModal onClose={() => setAlertsManageOpen(false)} flash={flash} onChanged={loadFeatureAlerts} />}
 
-      {groupsModalOpen && <GroupsModal groups={groups} products={products} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
+      {groupsModalOpen && <GroupsModal groups={groups} products={products} tasks={tasks} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
 
       {presenceOpen && <PresencePanel members={presence} meId={me.id} onClose={() => setPresenceOpen(false)} />}
 
@@ -748,6 +772,9 @@ function KanbanBoard({ tasks, activity, asOf, cmpTasks, dispName, canWrite, onOp
 // no fill. The accent strength is a 0..1 level that decays over a 2-hour window
 // (1 at creation, 0 at the end), exposed as the CSS var --new so it fades out
 // gradually. It re-computes on the dashboard's periodic refreshes.
+// Normalize a name/label for case-insensitive matching (owners, group owner lists).
+function nn(s: string): string { return (s || "").trim().toLowerCase(); }
+
 const NEW_WINDOW_MS = 2 * 60 * 60 * 1000;
 function newLevel(createdAt?: string): number {
   if (!createdAt) return 0;
@@ -1895,37 +1922,54 @@ function NotificationsModal({ onClose, flash }: { onClose: () => void; flash: (m
 
 // ---------------- Invite ----------------
 // ---------------- Product groups ----------------
-function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }: { groups: Group[]; products: Product[]; onClose: () => void; onChanged: () => Promise<void> | void; onActivate: (id: string) => void; flash: (m: string) => void; }) {
+function GroupsModal({ groups, products, tasks, onClose, onChanged, onActivate, flash }: { groups: Group[]; products: Product[]; tasks: Task[]; onClose: () => void; onChanged: () => Promise<void> | void; onActivate: (id: string) => void; flash: (m: string) => void; }) {
   const [mode, setMode] = useState<"list" | "edit">(groups.length ? "list" : "edit");
   const [editing, setEditing] = useState<Group | null>(null);
   const [name, setName] = useState("");
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Set<string>>(new Set()); // products
+  const [pickedOwners, setPickedOwners] = useState<Set<string>>(new Set());
+  const [pickedTasks, setPickedTasks] = useState<Set<string>>(new Set());
+  const [tab, setTab] = useState<"owners" | "products" | "tasks">("owners");
   const [query, setQuery] = useState("");
-  const [pickView, setPickView] = useState<"list" | "grid">("list");
   const [busy, setBusy] = useState(false);
 
+  const prodById = useMemo(() => { const m: Record<string, Product> = {}; products.forEach((p) => (m[p.id] = p)); return m; }, [products]);
   const active = useMemo(() => products.filter((p) => !p.decommissioned), [products]);
-  const list = useMemo(() => {
+  const owners = useMemo(() => Array.from(new Set(tasks.map((t) => (t.owner || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)), [tasks]);
+
+  const prodList = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = [...active].sort((a, b) => a.name.localeCompare(b.name));
     return q ? base.filter((p) => productOption(p).toLowerCase().includes(q)) : base;
   }, [active, query]);
+  const ownerList = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? owners.filter((o) => o.toLowerCase().includes(q)) : owners;
+  }, [owners, query]);
+  const taskList = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const base = [...tasks].sort((a, b) => a.title.localeCompare(b.title));
+    return q ? base.filter((t) => `${t.title} ${t.owner || ""} ${prodById[t.productId || ""]?.name || ""}`.toLowerCase().includes(q)) : base;
+  }, [tasks, query, prodById]);
 
-  function startNew() { setEditing(null); setName(""); setPicked(new Set()); setQuery(""); setMode("edit"); }
-  function startEdit(g: Group) { setEditing(g); setName(g.name); setPicked(new Set(g.productIds)); setQuery(""); setMode("edit"); }
-  function toggle(id: string) { setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }
+  const totalPicked = picked.size + pickedOwners.size + pickedTasks.size;
+  const toggleIn = (set: Set<string>, setter: (s: Set<string>) => void, id: string) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); setter(n); };
+
+  function startNew() { setEditing(null); setName(""); setPicked(new Set()); setPickedOwners(new Set()); setPickedTasks(new Set()); setQuery(""); setTab("owners"); setMode("edit"); }
+  function startEdit(g: Group) { setEditing(g); setName(g.name); setPicked(new Set(g.productIds || [])); setPickedOwners(new Set(g.ownerNames || [])); setPickedTasks(new Set(g.taskIds || [])); setQuery(""); setTab((g.ownerNames || []).length ? "owners" : (g.productIds || []).length ? "products" : "tasks"); setMode("edit"); }
 
   async function save() {
     const nm = name.trim();
     if (!nm) { flash("Give the group a name."); return; }
-    if (picked.size === 0) { flash("Pick at least one product."); return; }
+    if (totalPicked === 0) { flash("Pick at least one owner, product, or task."); return; }
+    const body = { name: nm, productIds: Array.from(picked), ownerNames: Array.from(pickedOwners), taskIds: Array.from(pickedTasks) };
     setBusy(true);
     try {
       if (editing) {
-        await api(`/api/groups/${editing.id}`, { method: "PATCH", body: JSON.stringify({ name: nm, productIds: Array.from(picked) }) });
+        await api(`/api/groups/${editing.id}`, { method: "PATCH", body: JSON.stringify(body) });
         flash("Group updated");
       } else {
-        const d = await api("/api/groups", { method: "POST", body: JSON.stringify({ name: nm, productIds: Array.from(picked) }) });
+        const d = await api("/api/groups", { method: "POST", body: JSON.stringify(body) });
         if (d.group?.id) onActivate(d.group.id);
         flash("Group created");
       }
@@ -1947,7 +1991,7 @@ function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }
         <div className="dbody">
           {mode === "list" ? (
             <>
-              <p className="lead" style={{ marginBottom: 12 }}>Your groups are personal. Pick one from the Groups bar to view just those products across the board, sheet, report and export.</p>
+              <p className="lead" style={{ marginBottom: 12 }}>Your groups are personal. A group can gather tasks by owner, by product, or by individually picked task, in any mix. Owner-based picks are dynamic: new tasks for those owners join the group automatically.</p>
               {groups.length === 0 ? <div className="hint" style={{ marginBottom: 12 }}>You have no groups yet.</div> : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
                   {groups.map((g) => (
@@ -1955,7 +1999,7 @@ function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }
                       <div className="prow-top">
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: 600 }}>{g.name}</div>
-                          <div className="hint">{g.productIds.length} product{g.productIds.length === 1 ? "" : "s"}</div>
+                          <div className="hint">{[g.ownerNames?.length ? `${g.ownerNames.length} owner${g.ownerNames.length === 1 ? "" : "s"}` : "", g.productIds?.length ? `${g.productIds.length} product${g.productIds.length === 1 ? "" : "s"}` : "", g.taskIds?.length ? `${g.taskIds.length} pinned task${g.taskIds.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ") || "empty"}</div>
                         </div>
                         <button className="btn ghost sm" onClick={() => startEdit(g)}>Edit</button>
                         <button className="btn ghost sm" onClick={() => remove(g)} disabled={busy}>Delete</button>
@@ -1974,41 +2018,53 @@ function GroupsModal({ groups, products, onClose, onChanged, onActivate, flash }
               </div>
               <div className="field">
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <label style={{ margin: 0 }}>Products <span className="hint">({picked.size} selected)</span></label>
-                  <span className="grow" />
                   <div className="segmented sm">
-                    <button type="button" aria-pressed={pickView === "list"} onClick={() => setPickView("list")}>List</button>
-                    <button type="button" aria-pressed={pickView === "grid"} onClick={() => setPickView("grid")}>Grid</button>
+                    <button type="button" aria-pressed={tab === "owners"} onClick={() => { setTab("owners"); setQuery(""); }}>Owners{pickedOwners.size ? ` (${pickedOwners.size})` : ""}</button>
+                    <button type="button" aria-pressed={tab === "products"} onClick={() => { setTab("products"); setQuery(""); }}>Products{picked.size ? ` (${picked.size})` : ""}</button>
+                    <button type="button" aria-pressed={tab === "tasks"} onClick={() => { setTab("tasks"); setQuery(""); }}>Tasks{pickedTasks.size ? ` (${pickedTasks.size})` : ""}</button>
                   </div>
+                  <span className="grow" />
+                  <span className="hint">{totalPicked} selected</span>
                 </div>
-                <input type="search" placeholder="Filter products…" value={query} onChange={(e) => setQuery(e.target.value)} style={{ marginBottom: 8 }} />
+                <div className="hint" style={{ marginBottom: 6 }}>
+                  {tab === "owners" ? "Every task owned by the people you pick joins the group, including ones added later." : tab === "products" ? "All tasks under the products you pick." : "Specific tasks you pin individually."}
+                </div>
+                <input type="search" placeholder={tab === "owners" ? "Filter owners…" : tab === "products" ? "Filter products…" : "Filter tasks…"} value={query} onChange={(e) => setQuery(e.target.value)} style={{ marginBottom: 8 }} />
                 <div style={{ maxHeight: 300, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
-                  {list.length === 0 ? <div className="hint" style={{ padding: 10 }}>No products match.</div>
-                    : pickView === "list" ? list.map((p) => {
-                      const on = picked.has(p.id);
-                      return (
-                        <label key={p.id} className={`gpickrow${on ? " on" : ""}`}>
-                          <input type="checkbox" checked={on} onChange={() => toggle(p.id)} />
-                          <span style={{ flex: 1, minWidth: 0 }}>
-                            <span className="gpick-name">{p.name}</span>
-                            <span className="hint" style={{ display: "block" }}>Manager: {p.pm || "unassigned"}{p.type ? ` · ${p.type}` : ""}</span>
-                          </span>
-                        </label>
-                      );
-                    })
-                    : (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, padding: 10 }}>
-                        {list.map((p) => {
-                          const on = picked.has(p.id);
-                          return (
-                            <label key={p.id} className={`gpick${on ? " on" : ""}`}>
-                              <input type="checkbox" checked={on} onChange={() => toggle(p.id)} />
-                              <span style={{ minWidth: 0 }}><span className="gpick-name">{p.name}</span>{p.type ? <span className="hint" style={{ display: "block" }}>{p.type}</span> : null}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
+                  {tab === "owners" ? (
+                    ownerList.length === 0 ? <div className="hint" style={{ padding: 10 }}>No owners match.</div>
+                      : ownerList.map((o) => {
+                        const on = pickedOwners.has(o);
+                        return (
+                          <label key={o} className={`gpickrow${on ? " on" : ""}`}>
+                            <input type="checkbox" checked={on} onChange={() => toggleIn(pickedOwners, setPickedOwners, o)} />
+                            <span style={{ flex: 1, minWidth: 0 }}><span className="gpick-name">{o}</span></span>
+                          </label>
+                        );
+                      })
+                  ) : tab === "products" ? (
+                    prodList.length === 0 ? <div className="hint" style={{ padding: 10 }}>No products match.</div>
+                      : prodList.map((p) => {
+                        const on = picked.has(p.id);
+                        return (
+                          <label key={p.id} className={`gpickrow${on ? " on" : ""}`}>
+                            <input type="checkbox" checked={on} onChange={() => toggleIn(picked, setPicked, p.id)} />
+                            <span style={{ flex: 1, minWidth: 0 }}><span className="gpick-name">{p.name}</span><span className="hint" style={{ display: "block" }}>Manager: {p.pm || "unassigned"}{p.type ? ` · ${p.type}` : ""}</span></span>
+                          </label>
+                        );
+                      })
+                  ) : (
+                    taskList.length === 0 ? <div className="hint" style={{ padding: 10 }}>No tasks match.</div>
+                      : taskList.map((t) => {
+                        const on = pickedTasks.has(t.id);
+                        return (
+                          <label key={t.id} className={`gpickrow${on ? " on" : ""}`}>
+                            <input type="checkbox" checked={on} onChange={() => toggleIn(pickedTasks, setPickedTasks, t.id)} />
+                            <span style={{ flex: 1, minWidth: 0 }}><span className="gpick-name">{t.title}</span><span className="hint" style={{ display: "block" }}>{t.owner || "unassigned"}{t.productId && prodById[t.productId] ? ` · ${prodById[t.productId].name}` : ""}</span></span>
+                          </label>
+                        );
+                      })
+                  )}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

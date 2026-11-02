@@ -7,7 +7,9 @@ export const runtime = "nodejs";
 
 const Patch = z.object({
   name: z.string().min(1).max(80).optional(),
-  productIds: z.array(z.string().min(1)).max(500).optional(),
+  productIds: z.array(z.string().min(1)).max(1000).optional(),
+  ownerNames: z.array(z.string().min(1).max(120)).max(200).optional(),
+  taskIds: z.array(z.string().min(1)).max(2000).optional(),
 });
 
 // Edit a group (owner only).
@@ -20,7 +22,7 @@ export const PATCH = withAuth(async (user, req, params) => {
   } catch {
     return error("Invalid group change.");
   }
-  const update: { name?: string; productIds?: string[] } = {};
+  const update: { name?: string; productIds?: string[]; ownerNames?: string[]; taskIds?: string[] } = {};
   if (data.name !== undefined) {
     const name = data.name.trim();
     if (!name) return error("Give the group a name.");
@@ -28,14 +30,27 @@ export const PATCH = withAuth(async (user, req, params) => {
   }
   if (data.productIds !== undefined) {
     const allowed = await groupableProductIds(user);
-    const productIds = Array.from(new Set(data.productIds)).filter((id) => allowed.has(id));
-    if (!productIds.length) return error("Pick at least one product you can access.");
-    update.productIds = productIds;
+    update.productIds = Array.from(new Set(data.productIds)).filter((id) => allowed.has(id));
   }
+  if (data.ownerNames !== undefined) {
+    update.ownerNames = Array.from(new Set(data.ownerNames.map((s) => s.trim()).filter(Boolean)));
+  }
+  if (data.taskIds !== undefined) {
+    update.taskIds = Array.from(new Set(data.taskIds));
+  }
+
+  // The resulting group must still match by something.
+  const finalProducts = update.productIds ?? (group as any).productIds ?? [];
+  const finalOwners = update.ownerNames ?? (group as any).ownerNames ?? [];
+  const finalTasks = update.taskIds ?? (group as any).taskIds ?? [];
+  if (!finalProducts.length && !finalOwners.length && !finalTasks.length) {
+    return error("A group needs at least one product, owner, or task.");
+  }
+
   const updated = await prisma.productGroup.update({
     where: { id: group.id },
     data: update,
-    select: { id: true, name: true, productIds: true },
+    select: { id: true, name: true, productIds: true, ownerNames: true, taskIds: true },
   });
   return json({ group: updated });
 });

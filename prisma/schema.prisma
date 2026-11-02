@@ -92,6 +92,8 @@ model ProductGroup {
   id             String       @id @default(cuid())
   name           String
   productIds     String[] // member product ids (same organization)
+  ownerNames     String[] @default([]) // task owner labels whose tasks join this group dynamically
+  taskIds        String[] @default([]) // individually pinned task ids
   userId         String // owner; groups are personal
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organizationId String
