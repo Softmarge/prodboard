@@ -1932,6 +1932,10 @@ function GroupsModal({ groups, products, tasks, onClose, onChanged, onActivate, 
   const [tab, setTab] = useState<"owners" | "products" | "tasks">("owners");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  const [nameErr, setNameErr] = useState("");
+  const [pickErr, setPickErr] = useState("");
+  const [glow, setGlow] = useState(false);
+  const flagName = () => { setNameErr("Give the group a name."); setGlow(false); requestAnimationFrame(() => setGlow(true)); };
 
   const prodById = useMemo(() => { const m: Record<string, Product> = {}; products.forEach((p) => (m[p.id] = p)); return m; }, [products]);
   const active = useMemo(() => products.filter((p) => !p.decommissioned), [products]);
@@ -1953,15 +1957,16 @@ function GroupsModal({ groups, products, tasks, onClose, onChanged, onActivate, 
   }, [tasks, query, prodById]);
 
   const totalPicked = picked.size + pickedOwners.size + pickedTasks.size;
-  const toggleIn = (set: Set<string>, setter: (s: Set<string>) => void, id: string) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); setter(n); };
+  const toggleIn = (set: Set<string>, setter: (s: Set<string>) => void, id: string) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); setter(n); if (pickErr) setPickErr(""); };
 
   function startNew() { setEditing(null); setName(""); setPicked(new Set()); setPickedOwners(new Set()); setPickedTasks(new Set()); setQuery(""); setTab("owners"); setMode("edit"); }
   function startEdit(g: Group) { setEditing(g); setName(g.name); setPicked(new Set(g.productIds || [])); setPickedOwners(new Set(g.ownerNames || [])); setPickedTasks(new Set(g.taskIds || [])); setQuery(""); setTab((g.ownerNames || []).length ? "owners" : (g.productIds || []).length ? "products" : "tasks"); setMode("edit"); }
 
   async function save() {
     const nm = name.trim();
-    if (!nm) { flash("Give the group a name."); return; }
-    if (totalPicked === 0) { flash("Pick at least one owner, product, or task."); return; }
+    if (!nm) { flagName(); return; }
+    if (totalPicked === 0) { setPickErr("Pick at least one owner, product, or task."); return; }
+    setNameErr(""); setPickErr("");
     const body = { name: nm, productIds: Array.from(picked), ownerNames: Array.from(pickedOwners), taskIds: Array.from(pickedTasks) };
     setBusy(true);
     try {
@@ -2014,9 +2019,11 @@ function GroupsModal({ groups, products, tasks, onClose, onChanged, onActivate, 
             <>
               <div className="field">
                 <label htmlFor="gname">Group name</label>
-                <input id="gname" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Tuesday Standup" autoFocus />
+                {nameErr && <div className="err" style={{ marginBottom: 6 }}>{nameErr}</div>}
+                <input id="gname" className={glow ? "glowred" : ""} onAnimationEnd={() => setGlow(false)} value={name} onChange={(e) => { setName(e.target.value); if (nameErr) setNameErr(""); }} placeholder="e.g. Tuesday Standup" autoFocus />
               </div>
               <div className="field">
+                {pickErr && <div className="err" style={{ marginBottom: 6 }}>{pickErr}</div>}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                   <div className="segmented sm">
                     <button type="button" aria-pressed={tab === "owners"} onClick={() => { setTab("owners"); setQuery(""); }}>Owners{pickedOwners.size ? ` (${pickedOwners.size})` : ""}</button>

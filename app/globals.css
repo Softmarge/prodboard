@@ -51,6 +51,9 @@ html,body{height:100%}
 .stagingblock-card h1{font-size:20px;margin:0 0 8px}
 .stagingblock-card p{color:var(--muted);line-height:1.6;font-size:14px;margin:0 0 18px}
 .stagingblock-foot{margin-top:16px;font-size:12px;color:var(--faint);line-height:1.5}
+/* A red border glow that fades out, to draw attention to an invalid field. */
+@keyframes glowred{0%{box-shadow:0 0 0 3px rgba(220,38,38,.55);border-color:#dc2626}100%{box-shadow:0 0 0 3px rgba(220,38,38,0);border-color:var(--border)}}
+.glowred{animation:glowred 1.4s ease-out}
 .appscroll{flex:1 1 auto;overflow-y:auto;min-height:0}
 body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--ui);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
 h1,h2,h3{margin:0;font-weight:600}
