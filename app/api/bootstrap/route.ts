@@ -13,7 +13,7 @@ export const GET = withAuth(async (user) => {
     prisma.product.findMany({ where: { organizationId: user.oid }, orderBy: { name: "asc" } }),
     prisma.task.findMany({ where: { organizationId: user.oid }, orderBy: { createdAt: "desc" } }),
     prisma.activity.findMany({ where: { organizationId: user.oid }, orderBy: { ts: "desc" }, take: 1000 }),
-    prisma.productGroup.findMany({ where: { userId: user.uid }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, productIds: true } }),
+    prisma.productGroup.findMany({ where: { userId: user.uid }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, productIds: true, ownerNames: true, taskIds: true } }),
     prisma.user.findUnique({ where: { id: user.uid }, select: { activeGroupId: true, hlName1: true, hlColor1: true, hlName2: true, hlColor2: true } }),
     prisma.taskHighlight.findMany({ where: { userId: user.uid }, select: { taskId: true, color: true } }),
   ]);
