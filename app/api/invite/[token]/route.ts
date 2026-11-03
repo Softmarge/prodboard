@@ -18,5 +18,6 @@ export async function GET(_req: Request, { params }: { params: { token: string }
     firstName: resolved.firstName,
     surname: resolved.surname,
     linkName: resolved.linkName,
+    teamName: resolved.teamName,
   });
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { prisma } from "@/lib/db";
 import { withAuth, json, error } from "@/lib/api";
 import { createInviteLink } from "@/lib/invite";
 
@@ -9,6 +10,7 @@ const Post = z.object({
   firstName: z.string().max(80).optional(),
   surname: z.string().max(80).optional(),
   linkName: z.string().max(120).optional(),
+  teamId: z.string().min(1).nullable().optional(),
 });
 
 // Any signed-in member can create an invite link. Role and name are all
@@ -21,6 +23,14 @@ export const POST = withAuth(async (user, req) => {
   } catch {
     return error("Could not create the invite link. Check the details and try again.");
   }
+  // An invite can pin an optional team; the invitee joins it (as an active
+  // member) when they sign up. Validate it belongs to this organization.
+  let teamName: string | null = null;
+  if (data.teamId) {
+    const team = await prisma.team.findFirst({ where: { id: data.teamId, organizationId: user.oid }, select: { id: true, name: true } });
+    if (!team) return error("That team was not found.", 404);
+    teamName = team.name;
+  }
   const link = await createInviteLink(user.oid, {
     role: data.role ?? null,
     // If linking to an existing free-text person, prefill the first name with that
@@ -28,6 +38,7 @@ export const POST = withAuth(async (user, req) => {
     firstName: data.firstName || (data.linkName ? data.linkName.split(/\s+/)[0] : undefined),
     surname: data.surname,
     linkName: data.linkName,
+    teamId: data.teamId ?? null,
   });
   const origin = new URL(req.url).origin;
   return json({
@@ -37,5 +48,7 @@ export const POST = withAuth(async (user, req) => {
     firstName: link.firstName ?? null,
     surname: link.surname ?? null,
     linkName: (link as any).linkName ?? null,
+    teamId: (link as any).teamId ?? null,
+    teamName,
   });
 });

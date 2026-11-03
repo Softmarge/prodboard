@@ -115,11 +115,14 @@ model InviteLink {
   surname        String? // optional prefill for the signup form
   linkName       String? // an existing free-text owner/reviewer label to link this account to on signup
   usedAt         DateTime? // set when a named link is consumed; named links are single-use
+  teamId         String? // optional team the invitee joins (as an active member) on signup
+  team           Team?        @relation(fields: [teamId], references: [id], onDelete: SetNull)
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
 
   @@index([organizationId])
+  @@index([teamId])
 }
 
 model User {
@@ -350,8 +353,9 @@ model Team {
   memberships      TeamMembership[]
   leads            TeamLead[]
   products         Product[]
-  tasks            Task[]      @relation("TeamTasks")
-  incomingRequests Task[]      @relation("TeamIncomingRequests")
+  tasks            Task[]       @relation("TeamTasks")
+  incomingRequests Task[]       @relation("TeamIncomingRequests")
+  inviteLinks      InviteLink[]
 
   @@index([organizationId])
   @@index([parentTeamId])

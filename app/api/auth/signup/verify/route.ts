@@ -113,6 +113,15 @@ export async function POST(req: Request) {
     if (revIds.length) await prisma.task.updateMany({ where: { id: { in: revIds } }, data: { reviewerUserId: result.user.id } });
   }
 
+  // If the invite pinned a team, add the new account to it as an active,
+  // primary member (it is the only team they belong to at signup).
+  if (resolvedInvite?.teamId) {
+    const team = await prisma.team.findFirst({ where: { id: resolvedInvite.teamId, organizationId: result.org.id }, select: { id: true } });
+    if (team) {
+      await prisma.teamMembership.create({ data: { userId: result.user.id, teamId: team.id, status: "active", isPrimary: true } }).catch(() => {});
+    }
+  }
+
   await setSession({
     uid: result.user.id,
     oid: result.org.id,

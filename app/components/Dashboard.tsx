@@ -2244,10 +2244,13 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
   const [surname, setSurname] = useState("");
   const [linkName, setLinkName] = useState("");
   const [cands, setCands] = useState<{ users: string[]; unlinked: { label: string; count: number }[] }>({ users: [], unlinked: [] });
+  const [teamId, setTeamId] = useState("");
+  const [teamOpts, setTeamOpts] = useState<{ id: string; name: string; parentTeamId: string | null }[]>([]);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => { api("/api/invite/candidates").then((d) => setCands({ users: d.users || [], unlinked: d.unlinked || [] })).catch(() => {}); }, []);
+  useEffect(() => { api("/api/teams/options").then((d) => setTeamOpts(d.teams || [])).catch(() => {}); }, []);
   // Warn if this person looks like someone already on ProdBoard.
   const dupUser = cands.users.find((u) => {
     const un = u.trim().toLowerCase();
@@ -2264,6 +2267,7 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
           firstName: firstName.trim() || undefined,
           surname: surname.trim() || undefined,
           linkName: linkName.trim() || undefined,
+          teamId: teamId || null,
         }),
       });
       setUrl(d.url);
@@ -2305,6 +2309,20 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
             <div className="hint" style={{ marginTop: 4 }}>Leave as “Let them choose” to not preselect a role. A link can never grant admin. You can also grant a task owner or reviewer viewer access later under Members.</div>
           </div>
 
+          {teamOpts.length > 0 && (
+            <div className="field">
+              <label htmlFor="invite-team">Team <span className="hint">(optional)</span></label>
+              <select id="invite-team" value={teamId} onChange={(e) => onSetting(setTeamId)(e.target.value)}>
+                <option value="">No team</option>
+                {teamOpts.map((t) => {
+                  const parent = t.parentTeamId ? teamOpts.find((x) => x.id === t.parentTeamId) : null;
+                  return <option key={t.id} value={t.id}>{parent ? `${parent.name} / ${t.name}` : t.name}</option>;
+                })}
+              </select>
+              <div className="hint" style={{ marginTop: 4 }}>If set, the new account joins this team when they sign up. Leave as “No team” to place them later under Teams.</div>
+            </div>
+          )}
+
           {cands.unlinked.length > 0 && (
             <div className="field">
               <label htmlFor="invite-link">Link to an existing person <span className="hint">(optional)</span></label>
@@ -2341,7 +2359,7 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
                 <button className="btn ghost sm" onClick={createLink} disabled={busy}>New link</button>
                 <button className="btn primary sm" onClick={copy}>Copy link</button>
               </div>
-              <div className="hint" style={{ marginTop: 10 }}>This link invites as <b>{inviteRoleLabel}</b>{named ? <>, prefilled for <b>{named}</b>. Create a separate link for each person you name.</> : <>. It is reusable, so anyone you share it with can join.</>}{linkName ? <> It will link the new account to tasks assigned to <b>{linkName}</b>.</> : null}</div>
+              <div className="hint" style={{ marginTop: 10 }}>This link invites as <b>{inviteRoleLabel}</b>{named ? <>, prefilled for <b>{named}</b>. Create a separate link for each person you name.</> : <>. It is reusable, so anyone you share it with can join.</>}{linkName ? <> It will link the new account to tasks assigned to <b>{linkName}</b>.</> : null}{teamId ? <> They will join the <b>{teamOpts.find((t) => t.id === teamId)?.name || "selected"}</b> team.</> : null}</div>
             </>
           )}
         </div>
