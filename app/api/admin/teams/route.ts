@@ -17,7 +17,7 @@ export const GET = withAuth(async (user) => {
       orderBy: { createdAt: "asc" },
       include: {
         memberships: { select: { userId: true, isPrimary: true, status: true } },
-        leads: { select: { userId: true } },
+        leads: { select: { userId: true, rank: true }, orderBy: { rank: "asc" } },
         _count: { select: { products: true, tasks: true } },
       },
     }),
@@ -37,7 +37,7 @@ export const GET = withAuth(async (user) => {
       membersSeeSubteams: t.membersSeeSubteams,
       defaultReviewerId: t.defaultReviewerId,
       members: t.memberships,
-      leadIds: t.leads.map((l: any) => l.userId),
+      leads: t.leads.map((l: any) => ({ userId: l.userId, rank: l.rank })),
       productCount: t._count.products,
       taskCount: t._count.tasks,
     })),

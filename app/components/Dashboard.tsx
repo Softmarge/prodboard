@@ -2449,7 +2449,7 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
 
 // ---------------- Teams (admin) ----------------
 type TeamMemberRow = { userId: string; isPrimary: boolean; status: string };
-type TeamRow = { id: string; name: string; kind: string; parentTeamId: string | null; memberVisibility: string; membersSeeSubteams: boolean; defaultReviewerId: string | null; members: TeamMemberRow[]; leadIds: string[]; productCount: number; taskCount: number };
+type TeamRow = { id: string; name: string; kind: string; parentTeamId: string | null; memberVisibility: string; membersSeeSubteams: boolean; defaultReviewerId: string | null; members: TeamMemberRow[]; leads: { userId: string; rank: number }[]; productCount: number; taskCount: number };
 type TeamPerson = { id: string; name: string; email: string; role: Role };
 
 function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string) => void; }) {
@@ -2538,7 +2538,7 @@ function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <b>{t.name}</b>{" "}
                         <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 999, border: "1px solid var(--border)", color: "var(--muted)" }}>{t.kind === "PROJECT" ? "Project" : "Product"}</span>
-                        <div className="hint">{memberIds.size} member{memberIds.size === 1 ? "" : "s"} · {t.leadIds.length} lead{t.leadIds.length === 1 ? "" : "s"} · {t.productCount} product{t.productCount === 1 ? "" : "s"} · {t.taskCount} task{t.taskCount === 1 ? "" : "s"}</div>
+                        <div className="hint">{memberIds.size} member{memberIds.size === 1 ? "" : "s"} · {t.leads.length} lead{t.leads.length === 1 ? "" : "s"} · {t.productCount} product{t.productCount === 1 ? "" : "s"} · {t.taskCount} task{t.taskCount === 1 ? "" : "s"}</div>
                       </div>
                       <span className="hint">{open ? "▴" : "▾"}</span>
                     </div>
@@ -2577,7 +2577,7 @@ function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string
                         <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 240, overflow: "auto" }}>
                           {people.map((p) => {
                             const isMember = memberIds.has(p.id);
-                            const isLead = t.leadIds.includes(p.id);
+                            const leadRank = t.leads.find((l) => l.userId === p.id)?.rank ?? 0;
                             const row = t.members.find((m) => m.userId === p.id);
                             const isPrim = row?.isPrimary;
                             const pend = row?.status === "pending";
@@ -2591,7 +2591,15 @@ function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string
                                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                     {pend && <button className="linklike" onClick={() => memberAction(t.id, "PATCH", { userId: p.id, status: "active" })}>Approve</button>}
                                     <label className={`rolechk${isPrim ? " on" : ""}`} title="Primary team"><input type="radio" name={`prim-${p.id}`} checked={!!isPrim} onChange={() => memberAction(t.id, "PATCH", { userId: p.id, isPrimary: true })} />Primary</label>
-                                    <label className={`rolechk${isLead ? " on" : ""}`} title="Team lead"><input type="checkbox" checked={isLead} onChange={(e) => memberAction(t.id, "PATCH", { userId: p.id, lead: e.target.checked })} />Lead</label>
+                                    <label className={`rolechk${leadRank ? " on" : ""}`} title="Team lead (1 = most senior)" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                      Lead
+                                      <select value={leadRank} onChange={(e) => memberAction(t.id, "PATCH", { userId: p.id, leadRank: Number(e.target.value) || null })} style={{ padding: "1px 4px", border: "1px solid var(--border)", borderRadius: 4, background: "var(--surface-2)" }}>
+                                        <option value={0}>No</option>
+                                        <option value={1}>1</option>
+                                        <option value={2}>2</option>
+                                        <option value={3}>3</option>
+                                      </select>
+                                    </label>
                                   </div>
                                 )}
                               </div>

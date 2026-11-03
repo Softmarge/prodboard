@@ -52,7 +52,7 @@ const Patch = z.object({
   userId: z.string().min(1),
   isPrimary: z.literal(true).optional(),
   status: z.enum(["active", "pending"]).optional(),
-  lead: z.boolean().optional(),
+  leadRank: z.number().int().min(1).max(3).nullable().optional(), // 1=Lead 1 (senior)..3; null removes lead
 });
 
 // Change a membership: approve a pending join, set the primary team, or toggle
@@ -68,7 +68,7 @@ export const PATCH = withAuth(async (user, req, params) => {
     return error("Invalid change.");
   }
   const membership = await prisma.teamMembership.findUnique({ where: { userId_teamId: { userId: data.userId, teamId: team.id } } });
-  if (!membership && data.lead !== true && data.isPrimary !== true) {
+  if (!membership && data.leadRank === undefined && data.isPrimary !== true) {
     return error("That person isn't a member of this team.", 404);
   }
 
@@ -79,16 +79,19 @@ export const PATCH = withAuth(async (user, req, params) => {
     await ensureMembership(data.userId, team.id);
     await setPrimary(data.userId, team.id);
   }
-  if (data.lead === true) {
+  if (data.leadRank != null) {
+    // Make this person Lead <rank> on the team. A lead must be a member, and one
+    // person holds each rank, so free the rank from anyone else first.
     await ensureMembership(data.userId, team.id);
     const hasPrimary = await prisma.teamMembership.findFirst({ where: { userId: data.userId, isPrimary: true } });
     if (!hasPrimary) await setPrimary(data.userId, team.id);
+    await prisma.teamLead.deleteMany({ where: { teamId: team.id, rank: data.leadRank, NOT: { userId: data.userId } } });
     await prisma.teamLead.upsert({
       where: { userId_teamId: { userId: data.userId, teamId: team.id } },
-      update: {},
-      create: { userId: data.userId, teamId: team.id },
+      update: { rank: data.leadRank },
+      create: { userId: data.userId, teamId: team.id, rank: data.leadRank },
     });
-  } else if (data.lead === false) {
+  } else if (data.leadRank === null) {
     await prisma.teamLead.deleteMany({ where: { userId: data.userId, teamId: team.id } });
   }
   return json({ ok: true });

@@ -378,18 +378,22 @@ model TeamMembership {
   @@index([teamId])
 }
 
-// The lead of a team: sees and edits everything in this team and all its
+// A lead of a team: sees and edits everything in this team and all its
 // sub-teams, and manages the team's members and settings. A lead must be a
-// member of the team they lead (enforced in the app).
+// member of the team they lead (enforced in the app). Leads are ranked by
+// seniority (rank 1 is the most senior); all ranks have the same powers for
+// now. One person holds each rank per team.
 model TeamLead {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   teamId    String
   team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  rank      Int      @default(1) // 1 = most senior (Lead 1), then 2, 3
   createdAt DateTime @default(now())
 
   @@unique([userId, teamId])
+  @@unique([teamId, rank])
   @@index([teamId])
 }
 
