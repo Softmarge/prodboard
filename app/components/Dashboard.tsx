@@ -129,6 +129,7 @@ export default function Dashboard({ me }: { me: Me }) {
   const [prodCreateOpen, setProdCreateOpen] = useState(false);
   const [prodSettings, setProdSettings] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [teamsOpen, setTeamsOpen] = useState(false);
   const [alertsManageOpen, setAlertsManageOpen] = useState(false);
   const [featureAlerts, setFeatureAlerts] = useState<{ id: string; title: string; body: string; linkUrl: string | null; linkLabel: string | null }[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -472,6 +473,7 @@ export default function Dashboard({ me }: { me: Me }) {
         )}
         <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
         {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
+        {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setTeamsOpen(true)}>Teams</button>}
         {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setAlertsManageOpen(true)}>Alerts</button>}
         <button className="iconbtn" title="Toggle light / dark" onClick={toggleTheme} aria-label="Toggle theme">◐</button>
         <button className="btn ghost sm" onClick={logout}>Sign out</button>
@@ -625,6 +627,7 @@ export default function Dashboard({ me }: { me: Me }) {
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} flash={flash} />}
 
       {membersOpen && <MembersModal meId={me.id} onClose={() => setMembersOpen(false)} flash={flash} />}
+      {teamsOpen && <TeamsModal onClose={() => setTeamsOpen(false)} flash={flash} />}
       {alertsManageOpen && <FeatureAlertsModal onClose={() => setAlertsManageOpen(false)} flash={flash} onChanged={loadFeatureAlerts} />}
 
       {groupsModalOpen && <GroupsModal groups={groups} products={products} tasks={tasks} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
@@ -2418,6 +2421,171 @@ function MembersModal({ meId, onClose, flash }: { meId: string; onClose: () => v
                   {adminOnly && <div className="hint" style={{ marginTop: 4 }}>Admin has full access, so the other roles do not apply.</div>}
                 </div>
               ); })}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------- Teams (admin) ----------------
+type TeamMemberRow = { userId: string; isPrimary: boolean; status: string };
+type TeamRow = { id: string; name: string; kind: string; parentTeamId: string | null; memberVisibility: string; membersSeeSubteams: boolean; defaultReviewerId: string | null; members: TeamMemberRow[]; leadIds: string[]; productCount: number; taskCount: number };
+type TeamPerson = { id: string; name: string; email: string; role: Role };
+
+function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string) => void; }) {
+  const [teams, setTeams] = useState<TeamRow[]>([]);
+  const [people, setPeople] = useState<TeamPerson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [cName, setCName] = useState("");
+  const [cKind, setCKind] = useState<"PRODUCT" | "PROJECT">("PRODUCT");
+  const [cParent, setCParent] = useState("");
+  const [cErr, setCErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try { const r = await api("/api/admin/teams"); setTeams(r.teams); setPeople(r.people); }
+    catch (e) { flash((e as Error).message); }
+    finally { setLoading(false); }
+  }, [flash]);
+  useEffect(() => { load(); }, [load]);
+
+  const inp = { padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface-2)", width: 150 };
+  const topLevel = teams.filter((t) => !t.parentTeamId);
+  const childrenOf = (id: string) => teams.filter((t) => t.parentTeamId === id);
+  const ordered: { t: TeamRow; depth: number }[] = [];
+  topLevel.forEach((t) => { ordered.push({ t, depth: 0 }); childrenOf(t.id).forEach((c) => ordered.push({ t: c, depth: 1 })); });
+  const seen = new Set(ordered.map((o) => o.t.id));
+  teams.forEach((t) => { if (!seen.has(t.id)) ordered.push({ t, depth: 0 }); });
+
+  async function createTeam() {
+    const name = cName.trim();
+    if (!name) { setCErr("Give the team a name."); return; }
+    setBusy(true); setCErr("");
+    try {
+      await api("/api/admin/teams", { method: "POST", body: JSON.stringify({ name, kind: cKind, parentTeamId: cParent || null }) });
+      setCName(""); setCParent(""); setCKind("PRODUCT");
+      await load(); flash("Team created");
+    } catch (e) { setCErr((e as Error).message); } finally { setBusy(false); }
+  }
+  async function patchTeam(id: string, body: Record<string, unknown>, okMsg?: string) {
+    try { await api(`/api/admin/teams/${id}`, { method: "PATCH", body: JSON.stringify(body) }); await load(); if (okMsg) flash(okMsg); }
+    catch (e) { flash((e as Error).message); await load(); }
+  }
+  async function deleteTeam(t: TeamRow) {
+    if (!confirm(`Delete team "${t.name}"? Its ${t.productCount} product(s) and ${t.taskCount} task(s) stay but lose their team, and members and leads on it are cleared.`)) return;
+    try { await api(`/api/admin/teams/${t.id}`, { method: "DELETE" }); if (expanded === t.id) setExpanded(null); await load(); flash("Team deleted"); }
+    catch (e) { flash((e as Error).message); }
+  }
+  async function memberAction(teamId: string, method: string, body?: Record<string, unknown>, qs?: string) {
+    try { await api(`/api/admin/teams/${teamId}/members${qs || ""}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }); await load(); }
+    catch (e) { flash((e as Error).message); await load(); }
+  }
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Teams</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          <div className="hint" style={{ marginBottom: 10 }}>Build your team structure (up to two levels) and put people in teams. Every member manages their own work; a team lead sees and edits everything in their team and its sub-teams. One person has one primary team. Products and tasks keep working throughout; nothing is deleted when you reorganise.</div>
+
+          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, marginBottom: 12 }}>
+            <div className="hint" style={{ fontWeight: 600, marginBottom: 6 }}>Add a team</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <input placeholder="Team name" value={cName} onChange={(e) => { setCName(e.target.value); setCErr(""); }} style={{ ...inp, width: 180 }} />
+              <select value={cKind} onChange={(e) => setCKind(e.target.value as "PRODUCT" | "PROJECT")} style={{ ...inp, width: 120 }}>
+                <option value="PRODUCT">Product</option>
+                <option value="PROJECT">Project</option>
+              </select>
+              <select value={cParent} onChange={(e) => setCParent(e.target.value)} style={{ ...inp, width: 170 }}>
+                <option value="">Top level (no parent)</option>
+                {topLevel.map((p) => <option key={p.id} value={p.id}>under {p.name}</option>)}
+              </select>
+              <button className="btn sm" disabled={busy} onClick={createTeam}>Add</button>
+            </div>
+            {cErr && <div className="hint" style={{ color: "var(--s-blocked)", marginTop: 6 }}>{cErr}</div>}
+          </div>
+
+          {loading ? <div className="hint">Loading…</div> : teams.length === 0 ? <div className="hint">No teams yet. Add your first one above.</div> : (
+            <div>
+              {ordered.map(({ t, depth }) => {
+                const open = expanded === t.id;
+                const memberIds = new Set(t.members.map((m) => m.userId));
+                return (
+                  <div key={t.id} style={{ marginLeft: depth * 18, border: "1px solid var(--border)", borderRadius: 8, marginBottom: 8, background: "var(--surface)" }}>
+                    <div className="prow" style={{ cursor: "pointer", padding: "8px 12px" }} onClick={() => setExpanded(open ? null : t.id)}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <b>{t.name}</b>{" "}
+                        <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 999, border: "1px solid var(--border)", color: "var(--muted)" }}>{t.kind === "PROJECT" ? "Project" : "Product"}</span>
+                        <div className="hint">{memberIds.size} member{memberIds.size === 1 ? "" : "s"} · {t.leadIds.length} lead{t.leadIds.length === 1 ? "" : "s"} · {t.productCount} product{t.productCount === 1 ? "" : "s"} · {t.taskCount} task{t.taskCount === 1 ? "" : "s"}</div>
+                      </div>
+                      <span className="hint">{open ? "▴" : "▾"}</span>
+                    </div>
+                    {open && (
+                      <div style={{ padding: "0 12px 12px" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+                          <label className="hint">Name<br /><input defaultValue={t.name} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== t.name) patchTeam(t.id, { name: v }, "Team renamed"); }} style={inp} /></label>
+                          <label className="hint">Kind<br /><select value={t.kind} onChange={(e) => patchTeam(t.id, { kind: e.target.value })} style={inp}><option value="PRODUCT">Product</option><option value="PROJECT">Project</option></select></label>
+                          <label className="hint">Parent<br />
+                            <select value={t.parentTeamId || ""} onChange={(e) => patchTeam(t.id, { parentTeamId: e.target.value || null }, "Moved")} style={inp}>
+                              <option value="">Top level (no parent)</option>
+                              {topLevel.filter((p) => p.id !== t.id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </label>
+                          <label className="hint">Default reviewer<br />
+                            <select value={t.defaultReviewerId || ""} onChange={(e) => patchTeam(t.id, { defaultReviewerId: e.target.value || null })} style={inp}>
+                              <option value="">No default reviewer</option>
+                              {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </label>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginBottom: 10 }}>
+                          <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            Members see
+                            <select value={t.memberVisibility} onChange={(e) => patchTeam(t.id, { memberVisibility: e.target.value })} style={{ ...inp, width: "auto" }}>
+                              <option value="ALL">all team tasks</option>
+                              <option value="OWN">only their own</option>
+                            </select>
+                          </label>
+                          <label className="hint" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <input type="checkbox" checked={t.membersSeeSubteams} onChange={(e) => patchTeam(t.id, { membersSeeSubteams: e.target.checked })} />
+                            Members also see sub-teams&apos; tasks
+                          </label>
+                        </div>
+                        <div className="hint" style={{ marginBottom: 4, fontWeight: 600 }}>Members</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 240, overflow: "auto" }}>
+                          {people.map((p) => {
+                            const isMember = memberIds.has(p.id);
+                            const isLead = t.leadIds.includes(p.id);
+                            const row = t.members.find((m) => m.userId === p.id);
+                            const isPrim = row?.isPrimary;
+                            const pend = row?.status === "pending";
+                            return (
+                              <div key={p.id} className="prow" style={{ padding: "4px 0" }}>
+                                <label style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                                  <input type="checkbox" checked={isMember} onChange={(e) => { if (e.target.checked) memberAction(t.id, "POST", { userId: p.id }); else memberAction(t.id, "DELETE", undefined, `?userId=${p.id}`); }} />
+                                  <span>{p.name}{pend ? <span className="hint"> · pending</span> : null}</span>
+                                </label>
+                                {isMember && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    {pend && <button className="linklike" onClick={() => memberAction(t.id, "PATCH", { userId: p.id, status: "active" })}>Approve</button>}
+                                    <label className={`rolechk${isPrim ? " on" : ""}`} title="Primary team"><input type="radio" name={`prim-${p.id}`} checked={!!isPrim} onChange={() => memberAction(t.id, "PATCH", { userId: p.id, isPrimary: true })} />Primary</label>
+                                    <label className={`rolechk${isLead ? " on" : ""}`} title="Team lead"><input type="checkbox" checked={isLead} onChange={(e) => memberAction(t.id, "PATCH", { userId: p.id, lead: e.target.checked })} />Lead</label>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{ marginTop: 10 }}><button className="btn ghost sm" onClick={() => deleteTeam(t)}>Delete team</button></div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
