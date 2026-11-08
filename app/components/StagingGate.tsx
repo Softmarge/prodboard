@@ -46,29 +46,33 @@ export default function StagingGate({ hasPasscode }: { hasPasscode: boolean }) {
           app and may be wiped at any time. Please do your real work on the live site.
         </p>
 
-        {hasPasscode ? (
-          <form onSubmit={unlock} style={{ display: "flex", flexDirection: "column", gap: 8, margin: "4px 0 10px" }}>
-            <input
-              value={code}
-              onChange={(e) => { setCode(e.target.value); setErr(""); }}
-              placeholder="Enter staging passcode"
-              autoFocus
-              style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text)", textAlign: "center", letterSpacing: 2 }}
-            />
-            <button className="btn primary" type="submit" disabled={busy || !code.trim()}>{busy ? "Checking…" : "Enter staging"}</button>
-          </form>
-        ) : (
-          <p className="stagingblock-foot">A staging passcode has not been set up yet. Ask the admin.</p>
-        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4, alignItems: "stretch" }}>
+          {hasPasscode ? (
+            <form onSubmit={unlock} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <input
+                value={code}
+                onChange={(e) => { setCode(e.target.value); setErr(""); }}
+                placeholder="Enter staging passcode"
+                autoFocus
+                style={{ padding: "10px 12px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-2)", color: "var(--text)", textAlign: "center", letterSpacing: 2 }}
+              />
+              <button className="btn primary" type="submit" disabled={busy || !code.trim()}>{busy ? "Checking…" : "Enter staging"}</button>
+            </form>
+          ) : (
+            <div className="stagingblock-foot" style={{ margin: 0 }}>A staging passcode has not been set up yet. Ask the admin.</div>
+          )}
 
-        {err && <div className="stagingblock-foot" style={{ color: "#f87171" }}>{err}</div>}
+          {err && <div style={{ color: "#f87171", fontSize: 13, lineHeight: 1.5 }}>{err}</div>}
 
-        <a className="btn" href="https://prodboard.app">Go to prodboard.app</a>
+          <a className="btn" href="https://prodboard.app" style={{ textAlign: "center" }}>Go to prodboard.app</a>
 
-        <div className="stagingblock-foot">
-          {emailed
-            ? "Sent. The passcode is on its way to the admin's email."
-            : <button className="linklike" type="button" onClick={emailAdmin}>Email the passcode to the admin</button>}
+          {hasPasscode && (
+            <div className="stagingblock-foot" style={{ margin: 0 }}>
+              {emailed
+                ? "Sent. The passcode is on its way to the admin's email."
+                : <button className="linklike" type="button" onClick={emailAdmin}>Email the passcode to the admin</button>}
+            </div>
+          )}
         </div>
       </div>
     </div>
