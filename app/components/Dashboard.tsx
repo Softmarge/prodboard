@@ -33,7 +33,7 @@ import {
   todayYMD,
 } from "./helpers";
 
-type Me = { id: string; name: string; email: string; role: Role; viewAll?: boolean; capPm?: boolean; capOwner?: boolean; capReviewer?: boolean };
+type Me = { id: string; name: string; email: string; role: Role; viewAll?: boolean; capPm?: boolean; capOwner?: boolean; capReviewer?: boolean; leadTeamIds?: string[] };
 type HlPreset = { name: string; color: string };
 type PresenceMember = { id: string; name: string; role: Role; lastSeenAt: string | null; online: boolean };
 
@@ -79,6 +79,7 @@ function PrBadge({ t }: { t: Task }) {
 export default function Dashboard({ me }: { me: Me }) {
   const router = useRouter();
   const isAdmin = me.role === "ADMIN";
+  const isLead = (me.leadTeamIds?.length ?? 0) > 0;
   // A user can hold several roles at once: their primary role plus any capability
   // flags a Lead PM granted. Each resolves to a "hat" they can act under.
   const canManage = isAdmin || me.role === "PM" || !!me.capPm;
@@ -471,9 +472,9 @@ export default function Dashboard({ me }: { me: Me }) {
             </select>
           </label>
         )}
-        <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>
+        {(isAdmin || isLead) && <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>}
         {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
-        {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setTeamsOpen(true)}>Teams</button>}
+        {(isAdmin || isLead) && mode === "pm" && <button className="btn ghost sm" onClick={() => setTeamsOpen(true)}>Teams</button>}
         {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setAlertsManageOpen(true)}>Alerts</button>}
         <button className="iconbtn" title="Toggle light / dark" onClick={toggleTheme} aria-label="Toggle theme">◐</button>
         <button className="btn ghost sm" onClick={logout}>Sign out</button>
@@ -627,7 +628,7 @@ export default function Dashboard({ me }: { me: Me }) {
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} flash={flash} />}
 
       {membersOpen && <MembersModal meId={me.id} onClose={() => setMembersOpen(false)} flash={flash} />}
-      {teamsOpen && <TeamsModal onClose={() => setTeamsOpen(false)} flash={flash} />}
+      {teamsOpen && <TeamsModal isAdmin={isAdmin} onClose={() => setTeamsOpen(false)} flash={flash} />}
       {alertsManageOpen && <FeatureAlertsModal onClose={() => setAlertsManageOpen(false)} flash={flash} onChanged={loadFeatureAlerts} />}
 
       {groupsModalOpen && <GroupsModal groups={groups} products={products} tasks={tasks} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
@@ -2246,11 +2247,12 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
   const [cands, setCands] = useState<{ users: string[]; unlinked: { label: string; count: number }[] }>({ users: [], unlinked: [] });
   const [teamId, setTeamId] = useState("");
   const [teamOpts, setTeamOpts] = useState<{ id: string; name: string; parentTeamId: string | null }[]>([]);
+  const [mustPick, setMustPick] = useState(false); // a team lead must tie the invite to their team
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => { api("/api/invite/candidates").then((d) => setCands({ users: d.users || [], unlinked: d.unlinked || [] })).catch(() => {}); }, []);
-  useEffect(() => { api("/api/teams/options").then((d) => setTeamOpts(d.teams || [])).catch(() => {}); }, []);
+  useEffect(() => { api("/api/teams/options").then((d) => { const ts = d.teams || []; setTeamOpts(ts); setMustPick(!!d.mustPick); if (d.mustPick && ts.length) setTeamId((cur) => cur || ts[0].id); }).catch(() => {}); }, []);
   // Warn if this person looks like someone already on ProdBoard.
   const dupUser = cands.users.find((u) => {
     const un = u.trim().toLowerCase();
@@ -2311,15 +2313,15 @@ function InviteModal({ onClose, flash }: { onClose: () => void; flash: (m: strin
 
           {teamOpts.length > 0 && (
             <div className="field">
-              <label htmlFor="invite-team">Team <span className="hint">(optional)</span></label>
+              <label htmlFor="invite-team">Team <span className="hint">{mustPick ? "(required)" : "(optional)"}</span></label>
               <select id="invite-team" value={teamId} onChange={(e) => onSetting(setTeamId)(e.target.value)}>
-                <option value="">No team</option>
+                {!mustPick && <option value="">No team</option>}
                 {teamOpts.map((t) => {
                   const parent = t.parentTeamId ? teamOpts.find((x) => x.id === t.parentTeamId) : null;
                   return <option key={t.id} value={t.id}>{parent ? `${parent.name} / ${t.name}` : t.name}</option>;
                 })}
               </select>
-              <div className="hint" style={{ marginTop: 4 }}>If set, the new account joins this team when they sign up. Leave as “No team” to place them later under Teams.</div>
+              <div className="hint" style={{ marginTop: 4 }}>{mustPick ? "Your invite is tied to your team; the new account joins it at signup." : "If set, the new account joins this team when they sign up. Leave as “No team” to place them later under Teams."}</div>
             </div>
           )}
 
@@ -2456,7 +2458,7 @@ type TeamDraft = { teamId: string; name: string; kind: string; parentTeamId: str
 type PopAction = { label: string; primary?: boolean; onClick: () => void };
 type Popup = { x: number; y: number; message: string; actions: PopAction[] };
 
-function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string) => void; }) {
+function TeamsModal({ isAdmin, onClose, flash }: { isAdmin: boolean; onClose: () => void; flash: (m: string) => void; }) {
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [people, setPeople] = useState<TeamPerson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2611,22 +2613,24 @@ function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string
         <div className="dbody">
           <div className="hint" style={{ marginBottom: 10 }}>Build your team structure (up to two levels) and put people in teams. Make your changes to a team, then press Save changes. Every member manages their own work; a team lead sees and edits everything in their team and its sub-teams. One person has one primary team. Products and tasks keep working throughout; nothing is deleted when you reorganise.</div>
 
-          <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, marginBottom: 12 }}>
-            <div className="hint" style={{ fontWeight: 600, marginBottom: 6 }}>Add a team</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-              <input placeholder="Team name" value={cName} onChange={(e) => { setCName(e.target.value); setCErr(""); }} style={{ ...inp, width: 180 }} />
-              <select value={cKind} onChange={(e) => setCKind(e.target.value as "PRODUCT" | "PROJECT")} style={{ ...inp, width: 120 }}>
-                <option value="PRODUCT">Product</option>
-                <option value="PROJECT">Project</option>
-              </select>
-              <select value={cParent} onChange={(e) => setCParent(e.target.value)} style={{ ...inp, width: 170 }}>
-                <option value="">Top level (no parent)</option>
-                {topLevel.map((p) => <option key={p.id} value={p.id}>under {p.name}</option>)}
-              </select>
-              <button className="btn sm" disabled={busy} onClick={createTeam}>Add</button>
+          {isAdmin && (
+            <div style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10, marginBottom: 12 }}>
+              <div className="hint" style={{ fontWeight: 600, marginBottom: 6 }}>Add a team</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                <input placeholder="Team name" value={cName} onChange={(e) => { setCName(e.target.value); setCErr(""); }} style={{ ...inp, width: 180 }} />
+                <select value={cKind} onChange={(e) => setCKind(e.target.value as "PRODUCT" | "PROJECT")} style={{ ...inp, width: 120 }}>
+                  <option value="PRODUCT">Product</option>
+                  <option value="PROJECT">Project</option>
+                </select>
+                <select value={cParent} onChange={(e) => setCParent(e.target.value)} style={{ ...inp, width: 170 }}>
+                  <option value="">Top level (no parent)</option>
+                  {topLevel.map((p) => <option key={p.id} value={p.id}>under {p.name}</option>)}
+                </select>
+                <button className="btn sm" disabled={busy} onClick={createTeam}>Add</button>
+              </div>
+              {cErr && <div className="hint" style={{ color: "var(--s-blocked)", marginTop: 6 }}>{cErr}</div>}
             </div>
-            {cErr && <div className="hint" style={{ color: "var(--s-blocked)", marginTop: 6 }}>{cErr}</div>}
-          </div>
+          )}
 
           {loading ? <div className="hint">Loading…</div> : teams.length === 0 ? <div className="hint">No teams yet. Add your first one above.</div> : (
             <div>
@@ -2648,14 +2652,16 @@ function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string
                     {open && d && (
                       <div style={{ padding: "0 12px 12px" }} onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
-                          <label className="hint">Name<br /><input value={d.name} onChange={(e) => patchDraft({ name: e.target.value })} style={inp} /></label>
-                          <label className="hint">Kind<br /><select value={d.kind} onChange={(e) => patchDraft({ kind: e.target.value })} style={inp}><option value="PRODUCT">Product</option><option value="PROJECT">Project</option></select></label>
-                          <label className="hint">Parent<br />
-                            <select value={d.parentTeamId || ""} onChange={(e) => patchDraft({ parentTeamId: e.target.value || null })} style={inp}>
-                              <option value="">Top level (no parent)</option>
-                              {topLevel.filter((p) => p.id !== t.id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                          </label>
+                          {isAdmin && (<>
+                            <label className="hint">Name<br /><input value={d.name} onChange={(e) => patchDraft({ name: e.target.value })} style={inp} /></label>
+                            <label className="hint">Kind<br /><select value={d.kind} onChange={(e) => patchDraft({ kind: e.target.value })} style={inp}><option value="PRODUCT">Product</option><option value="PROJECT">Project</option></select></label>
+                            <label className="hint">Parent<br />
+                              <select value={d.parentTeamId || ""} onChange={(e) => patchDraft({ parentTeamId: e.target.value || null })} style={inp}>
+                                <option value="">Top level (no parent)</option>
+                                {topLevel.filter((p) => p.id !== t.id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </select>
+                            </label>
+                          </>)}
                           <label className="hint">Default reviewer<br />
                             <select value={d.defaultReviewerId || ""} onChange={(e) => patchDraft({ defaultReviewerId: e.target.value || null })} style={inp}>
                               <option value="">No default reviewer</option>
@@ -2707,7 +2713,7 @@ function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string
                         </div>
                         <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center" }}>
                           <button className="btn sm" disabled={!dirty} onClick={() => saveDraft(() => openTeam(null))} style={{ background: dirty ? "#16a34a" : undefined, borderColor: dirty ? "#16a34a" : undefined, color: dirty ? "#fff" : undefined }}>Save changes</button>
-                          <button className="btn ghost sm" onClick={() => askDeleteTeam(t)}>Delete team</button>
+                          {isAdmin && <button className="btn ghost sm" onClick={() => askDeleteTeam(t)}>Delete team</button>}
                           {dirty && <span className="hint">Unsaved changes</span>}
                         </div>
                       </div>

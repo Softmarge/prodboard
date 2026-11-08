@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { withAuth, json, error } from "@/lib/api";
+import { withAuth, json, error, isAdmin } from "@/lib/api";
 import { createInviteLink } from "@/lib/invite";
+import { ledTeamIds } from "@/lib/teamAuth";
 
 export const runtime = "nodejs";
 
@@ -13,9 +14,9 @@ const Post = z.object({
   teamId: z.string().min(1).nullable().optional(),
 });
 
-// Any signed-in member can create an invite link. Role and name are all
-// optional: a link with no role lets the invitee choose, and a link with a
-// prefilled name saves them typing it. Links can never grant admin.
+// Only admins and team leads can create invites. An admin may pin any team (or
+// none); a team lead's invite is tied to a team they lead, so the invitee lands
+// in their team. Ordinary members cannot invite. Links can never grant admin.
 export const POST = withAuth(async (user, req) => {
   let data: z.infer<typeof Post> = {};
   try {
@@ -23,13 +24,27 @@ export const POST = withAuth(async (user, req) => {
   } catch {
     return error("Could not create the invite link. Check the details and try again.");
   }
-  // An invite can pin an optional team; the invitee joins it (as an active
-  // member) when they sign up. Validate it belongs to this organization.
+
+  const admin = isAdmin(user);
+  const led = admin ? [] : await ledTeamIds(user.uid);
+  if (!admin && led.length === 0) return error("Only team leads and admins can invite people.", 403);
+
+  // Resolve the team the invitee will join. A lead must pin one of their teams;
+  // an admin may pin any team in the org, or none.
+  let teamId: string | null = null;
   let teamName: string | null = null;
-  if (data.teamId) {
-    const team = await prisma.team.findFirst({ where: { id: data.teamId, organizationId: user.oid }, select: { id: true, name: true } });
-    if (!team) return error("That team was not found.", 404);
-    teamName = team.name;
+  if (admin) {
+    if (data.teamId) {
+      const team = await prisma.team.findFirst({ where: { id: data.teamId, organizationId: user.oid }, select: { id: true, name: true } });
+      if (!team) return error("That team was not found.", 404);
+      teamId = team.id; teamName = team.name;
+    }
+  } else {
+    const pick = data.teamId && led.includes(data.teamId) ? data.teamId : led[0];
+    if (data.teamId && !led.includes(data.teamId)) return error("You can only invite people into a team you lead.", 403);
+    const team = await prisma.team.findFirst({ where: { id: pick, organizationId: user.oid }, select: { id: true, name: true } });
+    if (!team) return error("Your team was not found.", 404);
+    teamId = team.id; teamName = team.name;
   }
   const link = await createInviteLink(user.oid, {
     role: data.role ?? null,
@@ -38,7 +53,7 @@ export const POST = withAuth(async (user, req) => {
     firstName: data.firstName || (data.linkName ? data.linkName.split(/\s+/)[0] : undefined),
     surname: data.surname,
     linkName: data.linkName,
-    teamId: data.teamId ?? null,
+    teamId,
   });
   const origin = new URL(req.url).origin;
   return json({
@@ -48,7 +63,7 @@ export const POST = withAuth(async (user, req) => {
     firstName: link.firstName ?? null,
     surname: link.surname ?? null,
     linkName: (link as any).linkName ?? null,
-    teamId: (link as any).teamId ?? null,
+    teamId,
     teamName,
   });
 });

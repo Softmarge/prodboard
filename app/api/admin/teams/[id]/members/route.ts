@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { withAuth, json, error, isAdmin } from "@/lib/api";
+import { managedTeamIds } from "@/lib/teamAuth";
 
 export const runtime = "nodejs";
 
@@ -30,9 +31,9 @@ const Add = z.object({ userId: z.string().min(1), isPrimary: z.boolean().optiona
 
 // Add a person to a team.
 export const POST = withAuth(async (user, req, params) => {
-  if (!isAdmin(user)) return error("Only an admin can change team members.", 403);
   const team = await assertTeam(user.oid, params.id);
   if (!team) return error("Team not found.", 404);
+  if (!isAdmin(user) && !(await managedTeamIds(user.uid, user.oid)).has(team.id)) return error("Only an admin or the team's lead can change members.", 403);
   let data;
   try {
     data = Add.parse(await req.json());
@@ -58,9 +59,9 @@ const Patch = z.object({
 // Change a membership: approve a pending join, set the primary team, or toggle
 // the team-lead flag (a lead is auto-made a member).
 export const PATCH = withAuth(async (user, req, params) => {
-  if (!isAdmin(user)) return error("Only an admin can change team members.", 403);
   const team = await assertTeam(user.oid, params.id);
   if (!team) return error("Team not found.", 404);
+  if (!isAdmin(user) && !(await managedTeamIds(user.uid, user.oid)).has(team.id)) return error("Only an admin or the team's lead can change members.", 403);
   let data;
   try {
     data = Patch.parse(await req.json());
@@ -99,9 +100,9 @@ export const PATCH = withAuth(async (user, req, params) => {
 
 // Remove a person from a team (also drops any lead role on it).
 export const DELETE = withAuth(async (user, req, params) => {
-  if (!isAdmin(user)) return error("Only an admin can change team members.", 403);
   const team = await assertTeam(user.oid, params.id);
   if (!team) return error("Team not found.", 404);
+  if (!isAdmin(user) && !(await managedTeamIds(user.uid, user.oid)).has(team.id)) return error("Only an admin or the team's lead can change members.", 403);
   const userId = new URL(req.url).searchParams.get("userId") || "";
   if (!userId) return error("Which member?");
   const membership = await prisma.teamMembership.findUnique({ where: { userId_teamId: { userId, teamId: team.id } } });

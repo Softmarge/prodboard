@@ -80,8 +80,10 @@ export const GET = withAuth(async (user) => {
     { name: me?.hlName2 || HL_PRESET_DEFAULTS[1].name, color: me?.hlColor2 || HL_PRESET_DEFAULTS[1].color },
   ];
 
+  const leadRows = await prisma.teamLead.findMany({ where: { userId: user.uid }, select: { teamId: true } });
+
   return json({
-    me: { id: user.uid, name: user.name, email: user.email, role: user.role, viewAll: user.viewAll === true, capPm: user.capPm === true, capOwner: user.capOwner === true, capReviewer: user.capReviewer === true },
+    me: { id: user.uid, name: user.name, email: user.email, role: user.role, viewAll: user.viewAll === true, capPm: user.capPm === true, capOwner: user.capOwner === true, capReviewer: user.capReviewer === true, leadTeamIds: leadRows.map((l: any) => l.teamId) },
     organization: org ? { id: org.id, name: org.name } : null,
     products,
     // All active products, for the owner/reviewer create picker (they are otherwise

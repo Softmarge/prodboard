@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { withAuth, json, error, isAdmin } from "@/lib/api";
+import { managedTeamIds } from "@/lib/teamAuth";
 
 export const runtime = "nodejs";
 
@@ -14,14 +15,23 @@ const Patch = z.object({
 });
 
 export const PATCH = withAuth(async (user, req, params) => {
-  if (!isAdmin(user)) return error("Only an admin can change teams.", 403);
+  const admin = isAdmin(user);
   const team = await prisma.team.findFirst({ where: { id: params.id, organizationId: user.oid } });
   if (!team) return error("Team not found.", 404);
+  if (!admin) {
+    const managed = await managedTeamIds(user.uid, user.oid);
+    if (!managed.has(team.id)) return error("You can only manage a team you lead.", 403);
+  }
   let data;
   try {
     data = Patch.parse(await req.json());
   } catch {
     return error("Invalid team change.");
+  }
+  // A team lead can change a team's settings, but not its structure (name, kind,
+  // parent) or create/delete teams: that stays with admins.
+  if (!admin && (data.name !== undefined || data.kind !== undefined || data.parentTeamId !== undefined)) {
+    return error("Renaming, retyping or moving a team is an admin action.", 403);
   }
 
   if (data.name !== undefined) {

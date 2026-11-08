@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { withAuth, json, error, isAdmin } from "@/lib/api";
+import { managedTeamIds } from "@/lib/teamAuth";
 
 export const runtime = "nodejs";
 
@@ -10,10 +11,15 @@ export const runtime = "nodejs";
 // List every team in the org with its members, leads and counts, plus the org's
 // people so the admin UI can assign them without a second call.
 export const GET = withAuth(async (user) => {
-  if (!isAdmin(user)) return error("Only an admin can manage teams.", 403);
+  const admin = isAdmin(user);
+  let managed: Set<string> | null = null;
+  if (!admin) {
+    managed = await managedTeamIds(user.uid, user.oid);
+    if (managed.size === 0) return error("Only an admin or a team lead can manage teams.", 403);
+  }
   const [teams, people] = await Promise.all([
     prisma.team.findMany({
-      where: { organizationId: user.oid },
+      where: admin ? { organizationId: user.oid } : { organizationId: user.oid, id: { in: [...managed!] } },
       orderBy: { createdAt: "asc" },
       include: {
         memberships: { select: { userId: true, isPrimary: true, status: true } },
