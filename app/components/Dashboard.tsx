@@ -2501,6 +2501,22 @@ function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string
     try { await api(`/api/admin/teams/${teamId}/members${qs || ""}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }); await load(); }
     catch (e) { flash((e as Error).message); await load(); }
   }
+  // Add or remove a member via the checkbox. When adding someone to a real team
+  // while they are still in the default "General" team, offer to delist them
+  // from General so it does not linger as a duplicate home.
+  async function toggleMember(team: TeamRow, person: TeamPerson, checked: boolean) {
+    if (!checked) { await memberAction(team.id, "DELETE", undefined, `?userId=${person.id}`); return; }
+    try { await api(`/api/admin/teams/${team.id}/members`, { method: "POST", body: JSON.stringify({ userId: person.id }) }); }
+    catch (e) { flash((e as Error).message); await load(); return; }
+    const general = teams.find((x) => !x.parentTeamId && x.name.trim().toLowerCase() === "general");
+    if (general && general.id !== team.id && general.members.some((m) => m.userId === person.id)) {
+      if (confirm(`Also remove ${person.name} from the General team? They were placed there by default.`)) {
+        try { await api(`/api/admin/teams/${general.id}/members?userId=${person.id}`, { method: "DELETE" }); }
+        catch (e) { flash((e as Error).message); }
+      }
+    }
+    await load();
+  }
 
   return (
     <>
@@ -2584,7 +2600,7 @@ function TeamsModal({ onClose, flash }: { onClose: () => void; flash: (m: string
                             return (
                               <div key={p.id} className="prow" style={{ padding: "4px 0" }}>
                                 <label style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                                  <input type="checkbox" checked={isMember} onChange={(e) => { if (e.target.checked) memberAction(t.id, "POST", { userId: p.id }); else memberAction(t.id, "DELETE", undefined, `?userId=${p.id}`); }} />
+                                  <input type="checkbox" checked={isMember} onChange={(e) => toggleMember(t, p, e.target.checked)} />
                                   <span>{p.name}{pend ? <span className="hint"> · pending</span> : null}</span>
                                 </label>
                                 {isMember && (
