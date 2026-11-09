@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import Dashboard from "@/app/components/Dashboard";
 import StagingGate from "@/app/components/StagingGate";
+import LockedOut from "@/app/components/LockedOut";
 import { stagingGateOn, stagingUnlockToken, STAGING_COOKIE } from "@/lib/staging";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,10 @@ export default async function DashboardPage() {
     const adminFallback = !token && user.role === "ADMIN";
     if (!unlocked && !adminFallback) return <StagingGate hasPasscode={!!token} />;
   }
+
+  // A locked account can't use the app.
+  const acct = await prisma.user.findUnique({ where: { id: user.uid }, select: { lockedAt: true } });
+  if (acct?.lockedAt) return <LockedOut />;
 
   const leadRows = await prisma.teamLead.findMany({ where: { userId: user.uid }, select: { teamId: true } });
 

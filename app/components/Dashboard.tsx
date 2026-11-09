@@ -131,6 +131,7 @@ export default function Dashboard({ me }: { me: Me }) {
   const [prodSettings, setProdSettings] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
   const [teamsOpen, setTeamsOpen] = useState(false);
+  const [orgSettingsOpen, setOrgSettingsOpen] = useState(false);
   const [alertsManageOpen, setAlertsManageOpen] = useState(false);
   const [featureAlerts, setFeatureAlerts] = useState<{ id: string; title: string; body: string; linkUrl: string | null; linkLabel: string | null }[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -282,6 +283,18 @@ export default function Dashboard({ me }: { me: Me }) {
     const b = setInterval(beat, 60000);
     const r = setInterval(refresh, 30000);
     return () => { live = false; clearInterval(b); clearInterval(r); };
+  }, []);
+  // Lock detection: if this account gets locked, an authenticated ping returns
+  // 403 { locked }; reload so the server renders the locked screen.
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const r = await fetch("/api/me/ping", { cache: "no-store" });
+        if (r.status === 403) { const d = await r.json().catch(() => ({})); if (d && d.locked) window.location.reload(); }
+      } catch {}
+    };
+    const t = setInterval(check, 15000);
+    return () => clearInterval(t);
   }, []);
   const onlineCount = presence.filter((m) => m.online).length;
   const lastActivity = activity[0] || null;
@@ -475,6 +488,7 @@ export default function Dashboard({ me }: { me: Me }) {
         {(isAdmin || isLead) && <button className="btn ghost sm" onClick={() => setInviteOpen(true)}>Invite</button>}
         {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setMembersOpen(true)}>Members</button>}
         {(isAdmin || isLead) && mode === "pm" && <button className="btn ghost sm" onClick={() => setTeamsOpen(true)}>Teams</button>}
+        {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setOrgSettingsOpen(true)}>Org settings</button>}
         {isAdmin && mode === "pm" && <button className="btn ghost sm" onClick={() => setAlertsManageOpen(true)}>Alerts</button>}
         <button className="iconbtn" title="Toggle light / dark" onClick={toggleTheme} aria-label="Toggle theme">◐</button>
         <button className="btn ghost sm" onClick={logout}>Sign out</button>
@@ -629,6 +643,7 @@ export default function Dashboard({ me }: { me: Me }) {
 
       {membersOpen && <MembersModal meId={me.id} onClose={() => setMembersOpen(false)} flash={flash} />}
       {teamsOpen && <TeamsModal isAdmin={isAdmin} onClose={() => setTeamsOpen(false)} flash={flash} />}
+      {orgSettingsOpen && <OrgSettingsModal meId={me.id} onClose={() => setOrgSettingsOpen(false)} flash={flash} />}
       {alertsManageOpen && <FeatureAlertsModal onClose={() => setAlertsManageOpen(false)} flash={flash} onChanged={loadFeatureAlerts} />}
 
       {groupsModalOpen && <GroupsModal groups={groups} products={products} tasks={tasks} onClose={() => setGroupsModalOpen(false)} onChanged={reloadWork} onActivate={activateGroup} flash={flash} />}
@@ -2738,6 +2753,54 @@ function TeamsModal({ isAdmin, onClose, flash }: { isAdmin: boolean; onClose: ()
           </div>
         </>
       )}
+    </>
+  );
+}
+
+// ---------------- Org settings (admin) ----------------
+type OrgUser = { id: string; name: string; email: string; role: Role; lockedAt: string | null };
+
+function OrgSettingsModal({ meId, onClose, flash }: { meId: string; onClose: () => void; flash: (m: string) => void }) {
+  const [users, setUsers] = useState<OrgUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    try { const d = await api("/api/users"); setUsers(d.users || []); } catch (e) { flash((e as Error).message); } finally { setLoading(false); }
+  }, [flash]);
+  useEffect(() => { load(); }, [load]);
+
+  async function setLocked(u: OrgUser, locked: boolean) {
+    try { await api(`/api/admin/users/${u.id}/lock`, { method: "POST", body: JSON.stringify({ locked }) }); await load(); flash(locked ? `${u.name} locked out` : `${u.name} unlocked`); }
+    catch (e) { flash((e as Error).message); }
+  }
+
+  return (
+    <>
+      <div className="scrim" onClick={onClose} />
+      <div className="modal" role="dialog" aria-modal="true">
+        <div className="dhead"><h2>Org settings</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="dbody">
+          <div className="hint" style={{ marginBottom: 10 }}>Organization-wide controls; more settings (such as email domain rules) will live here. For now, lock or unlock member accounts. A locked person is blocked immediately on their next action and signed out within a few seconds, and cannot get back in until you unlock them.</div>
+          <div className="hint" style={{ fontWeight: 600, margin: "6px 0 4px" }}>Member access</div>
+          {loading ? <div className="hint">Loading…</div> : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {users.map((u) => (
+                <div key={u.id} className="prow" style={{ padding: "6px 0" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <b>{u.name}</b>{u.id === meId ? <span className="hint"> (you)</span> : null}
+                    {u.lockedAt ? <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 6px", borderRadius: 999, background: "#dc2626", color: "#fff" }}>Locked</span> : null}
+                    <div className="hint">{u.email} · {roleLabel(u.role)}</div>
+                  </div>
+                  {u.id !== meId && (
+                    u.lockedAt
+                      ? <button className="btn sm" onClick={() => setLocked(u, false)}>Unlock</button>
+                      : <button className="btn ghost sm" onClick={() => setLocked(u, true)}>Lock out</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </>
   );
 }

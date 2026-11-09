@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession, SessionUser } from "./auth";
+import { prisma } from "./db";
 import { rateLimit, tooMany, LIMITS } from "./ratelimit";
 
 export type Handler = (ctx: {
@@ -73,6 +74,11 @@ export function withAuth(
   return async (req: Request, context: { params?: Record<string, string> }) => {
     const user = await getSession();
     if (!user) return error("Not signed in", 401);
+    // A locked account is blocked from everything, checked per request so a lock
+    // takes effect on the user's very next action. The client's ping poll turns
+    // the 403 into the locked screen for an idle tab.
+    const acct = await prisma.user.findUnique({ where: { id: user.uid }, select: { lockedAt: true } });
+    if (acct?.lockedAt) return NextResponse.json({ error: "This account has been locked.", locked: true }, { status: 403 });
     // Safety-net cap on writes per user. Reads (polled often) are left uncounted.
     if (req.method && req.method !== "GET" && req.method !== "HEAD") {
       const rl = await rateLimit("api", user.uid, LIMITS.api);

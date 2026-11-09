@@ -143,6 +143,7 @@ model User {
   emailMuted     String[]     @default([]) // event keys this user has turned off for email
   activeGroupId  String? // last selected product group; null = Main (all products)
   lastSeenAt     DateTime? // updated by a heartbeat; drives online presence and last seen
+  lockedAt       DateTime? // set when an admin locks the account out; null = active
   hlName1        String? // personal highlight preset 1 name
   hlColor1       String? // personal highlight preset 1 color (hex)
   hlName2        String? // personal highlight preset 2 name
