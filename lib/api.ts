@@ -16,6 +16,19 @@ export function error(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
+// The public origin the request actually came in on, for building links that go
+// into emails and invites. Uses the forwarded host (what the browser hit) rather
+// than new URL(req.url).origin, which on Vercel does not reliably reflect the
+// public host, so a staging request was producing production links.
+export function requestOrigin(req: Request): string {
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+  if (host) {
+    const proto = req.headers.get("x-forwarded-proto") || "https";
+    return `${proto}://${host.split(",")[0].trim()}`;
+  }
+  return new URL(req.url).origin;
+}
+
 /** Require a signed-in user. */
 export async function requireUser(): Promise<SessionUser | null> {
   return getSession();

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
-import { json, error } from "@/lib/api";
+import { json, error, requestOrigin } from "@/lib/api";
 import { sendEmail } from "@/lib/email";
 import { brandedEmail } from "@/lib/emailTemplate";
 import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     await prisma.passwordReset.deleteMany({ where: { userId: user.id, usedAt: null } });
     await prisma.passwordReset.create({ data: { userId: user.id, tokenHash, expiresAt } });
 
-    const origin = new URL(req.url).origin;
+    const origin = requestOrigin(req);
     const link = `${origin}/reset?token=${token}`;
     const relayTo = process.env.VERIFICATION_RELAY_TO;
     if (relayTo) {

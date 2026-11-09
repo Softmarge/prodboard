@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { withAuth, json, error, isAdmin } from "@/lib/api";
+import { withAuth, json, error, isAdmin, requestOrigin } from "@/lib/api";
 import { createInviteLink } from "@/lib/invite";
 import { ledTeamIds } from "@/lib/teamAuth";
 
@@ -55,7 +55,7 @@ export const POST = withAuth(async (user, req) => {
     linkName: data.linkName,
     teamId,
   });
-  const origin = new URL(req.url).origin;
+  const origin = requestOrigin(req);
   return json({
     token: link.token,
     url: `${origin}/signup?invite=${link.token}`,

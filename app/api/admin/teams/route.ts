@@ -17,22 +17,26 @@ export const GET = withAuth(async (user) => {
     managed = await managedTeamIds(user.uid, user.oid);
     if (managed.size === 0) return error("Only an admin or a team lead can manage teams.", 403);
   }
-  const [teams, people] = await Promise.all([
-    prisma.team.findMany({
-      where: admin ? { organizationId: user.oid } : { organizationId: user.oid, id: { in: [...managed!] } },
-      orderBy: { createdAt: "asc" },
-      include: {
-        memberships: { select: { userId: true, isPrimary: true, status: true } },
-        leads: { select: { userId: true, rank: true }, orderBy: { rank: "asc" } },
-        _count: { select: { products: true, tasks: true } },
-      },
-    }),
-    prisma.user.findMany({
-      where: { organizationId: user.oid },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, email: true, role: true },
-    }),
-  ]);
+  const teams = await prisma.team.findMany({
+    where: admin ? { organizationId: user.oid } : { organizationId: user.oid, id: { in: [...managed!] } },
+    orderBy: { createdAt: "asc" },
+    include: {
+      memberships: { select: { userId: true, isPrimary: true, status: true } },
+      leads: { select: { userId: true, rank: true }, orderBy: { rank: "asc" } },
+      _count: { select: { products: true, tasks: true } },
+    },
+  });
+  // Admins pick from everyone in the org. A team lead only sees and manages the
+  // people already in the teams they manage; new members arrive via the lead's
+  // invites, not by adding arbitrary (or un-teamed) org users.
+  const peopleSel = { id: true, name: true, email: true, role: true };
+  let people;
+  if (admin) {
+    people = await prisma.user.findMany({ where: { organizationId: user.oid }, orderBy: { name: "asc" }, select: peopleSel });
+  } else {
+    const ids = Array.from(new Set(teams.flatMap((t: any) => t.memberships.map((m: any) => m.userId))));
+    people = ids.length ? await prisma.user.findMany({ where: { organizationId: user.oid, id: { in: ids } }, orderBy: { name: "asc" }, select: peopleSel }) : [];
+  }
   return json({
     teams: teams.map((t: any) => ({
       id: t.id,

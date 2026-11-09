@@ -1,7 +1,7 @@
 import { z } from "zod";
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
-import { error, json } from "@/lib/api";
+import { error, json, requestOrigin } from "@/lib/api";
 import { sendEmail } from "@/lib/email";
 import { brandedEmail } from "@/lib/emailTemplate";
 import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     where: { email },
     data: { codeHash: hashCode(code), attempts: 0, expiresAt: new Date(Date.now() + 1000 * 60 * 10) },
   });
-  const origin = new URL(req.url).origin;
+  const origin = requestOrigin(req);
   const relayTo = process.env.VERIFICATION_RELAY_TO;
   if (relayTo) {
     await sendEmail({

@@ -2,7 +2,7 @@ import { z } from "zod";
 import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
-import { error, json } from "@/lib/api";
+import { error, json, requestOrigin } from "@/lib/api";
 import { passwordProblem } from "@/lib/password";
 import { sendEmail, emailConfigured } from "@/lib/email";
 import { brandedEmail } from "@/lib/emailTemplate";
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
   // While there is no verified sending domain, Resend can only deliver to the
   // account owner. VERIFICATION_RELAY_TO routes every code to that one inbox,
   // tagged with who is signing up, so an admin can relay it.
-  const origin = new URL(req.url).origin;
+  const origin = requestOrigin(req);
   const relayTo = process.env.VERIFICATION_RELAY_TO;
   const relayed = !!relayTo;
   const sent = relayed
