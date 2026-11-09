@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { verifyPassword, setSession } from "@/lib/auth";
 import { error, json } from "@/lib/api";
+import { STAGING_COOKIE } from "@/lib/staging";
 import { rateLimit, tooMany, clientIp, LIMITS } from "@/lib/ratelimit";
 
 export const runtime = "nodejs";
@@ -40,5 +42,8 @@ export async function POST(req: Request) {
     capOwner: (user as any).capOwner === true,
     capReviewer: (user as any).capReviewer === true,
   });
+  // Clear any staging unlock so the passcode is required on every login, not
+  // just once per browser. A prior account's unlock must not admit the next.
+  cookies().delete(STAGING_COOKIE);
   return json({ ok: true, user: { id: user.id, name: user.name, role: user.role } });
 }
