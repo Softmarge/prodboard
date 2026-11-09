@@ -1,19 +1,25 @@
-import { withAuth, json } from "@/lib/api";
+import { withAuth, json, requestOrigin } from "@/lib/api";
 import { stagingGateOn, stagingUnlockToken } from "@/lib/staging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Diagnostic: reports only whether the gate's env is reaching this runtime,
-// never any secret value. Temporary, remove once the gate is confirmed working.
-export const GET = withAuth(async () => {
+// Diagnostic: reports only whether the gate's env reaches this runtime and what
+// host/origin the request resolves to (no secret values). Temporary.
+export const GET = withAuth(async (_user, req) => {
   return json({
     appEnv: process.env.NEXT_PUBLIC_APP_ENV ?? null,
     gateOn: stagingGateOn(),
     hasPasscode: !!process.env.STAGING_PASSCODE,
-    passcodeLength: (process.env.STAGING_PASSCODE || "").length,
-    hasAuthSecret: !!process.env.AUTH_SECRET,
     tokenComputed: !!stagingUnlockToken(),
     emailConfigured: !!(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+    // Origin diagnostics for the link bug:
+    reqUrlOrigin: new URL(req.url).origin,
+    hostHeader: req.headers.get("host"),
+    xForwardedHost: req.headers.get("x-forwarded-host"),
+    xForwardedProto: req.headers.get("x-forwarded-proto"),
+    computedOrigin: requestOrigin(req),
+    appOriginEnv: process.env.APP_ORIGIN ?? null,
+    verificationRelayTo: process.env.VERIFICATION_RELAY_TO ? "set" : null,
   });
 });
