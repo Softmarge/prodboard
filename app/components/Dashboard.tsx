@@ -2804,9 +2804,11 @@ function OrgSettingsModal({ meId, onClose, flash }: { meId: string; onClose: () 
     } catch (e) { flash((e as Error).message); } finally { setSavingDomains(false); }
   }
 
-  // Non-admin users who neither match the saved rule nor are grandfathered in.
+  // Every non-admin whose email is outside the saved rule, whatever their
+  // current disposition. Allowed (exempt) people stay listed so an admin can
+  // revoke the exemption later; the allow/require actions are live toggles.
   const outside = savedDomains.length
-    ? users.filter((u) => u.role !== "ADMIN" && !u.domainExempt && !savedDomains.includes(emailDom(u.email)))
+    ? users.filter((u) => u.role !== "ADMIN" && !savedDomains.includes(emailDom(u.email)))
     : [];
 
   function togglePick(id: string) {
@@ -2857,15 +2859,19 @@ function OrgSettingsModal({ meId, onClose, flash }: { meId: string; onClose: () 
               {/* Reconcile existing users against the saved rule */}
               {outside.length > 0 && (
                 <div style={{ marginTop: 14, padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-2)" }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{outside.length} {outside.length === 1 ? "member does" : "members do"} not match the rule</div>
-                  <div className="hint" style={{ marginBottom: 8 }}>Allow them to keep their current email, or require them to switch to an approved address before they can continue.</div>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{outside.length} {outside.length === 1 ? "member is" : "members are"} outside the domain rule</div>
+                  <div className="hint" style={{ marginBottom: 8 }}>Select people, then allow them to keep their current email or require them to switch to an approved address. You can change your mind at any time: allowing someone now does not stop you requiring a change later.</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
                     {outside.map((u) => (
                       <label key={u.id} className="prow" style={{ padding: "5px 0", cursor: "pointer", alignItems: "center" }}>
                         <input type="checkbox" checked={picked.has(u.id)} onChange={() => togglePick(u.id)} style={{ marginRight: 8 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <b>{u.name}</b>
-                          {u.mustChangeEmail ? <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 6px", borderRadius: 999, background: "#f59e0b", color: "#1a1200" }}>Must change</span> : null}
+                          {u.domainExempt
+                            ? <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 6px", borderRadius: 999, background: "#16a34a", color: "#fff" }}>Allowed</span>
+                            : u.mustChangeEmail
+                              ? <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 6px", borderRadius: 999, background: "#f59e0b", color: "#1a1200" }}>Must change</span>
+                              : <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 6px", borderRadius: 999, background: "var(--border)", color: "var(--text)" }}>Not reviewed</span>}
                           <div className="hint">{u.email} · {roleLabel(u.role)}</div>
                         </div>
                       </label>
