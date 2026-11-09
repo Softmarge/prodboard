@@ -36,6 +36,11 @@ export default function StagingGate({ hasPasscode }: { hasPasscode: boolean }) {
     }
   }
 
+  async function switchAccount() {
+    try { await fetch("/api/auth/logout", { method: "POST" }); } catch {}
+    window.location.href = "/login";
+  }
+
   return (
     <div className="stagingblock">
       <div className="stagingblock-card">
@@ -63,6 +68,8 @@ export default function StagingGate({ hasPasscode }: { hasPasscode: boolean }) {
           )}
 
           {err && <div style={{ color: "#f87171", fontSize: 13, lineHeight: 1.5 }}>{err}</div>}
+
+          <button className="btn" type="button" onClick={switchAccount}>Sign in with a different account</button>
 
           <a className="btn" href="https://prodboard.app" style={{ textAlign: "center" }}>Go to prodboard.app</a>
 
