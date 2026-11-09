@@ -31,6 +31,7 @@ model Organization {
   id          String   @id @default(cuid())
   name        String   @unique
   teams       String[] // custom team/function names added beyond the defaults
+  allowedDomains String[] @default([]) // email domains members must use; empty = all allowed
   inviteToken String?  @unique // shareable token; anyone with the link joins this org
   createdAt   DateTime @default(now())
 
@@ -144,6 +145,8 @@ model User {
   activeGroupId  String? // last selected product group; null = Main (all products)
   lastSeenAt     DateTime? // updated by a heartbeat; drives online presence and last seen
   lockedAt       DateTime? // set when an admin locks the account out; null = active
+  mustChangeEmail Boolean   @default(false) // admin requires an email change (domain rule); blocks the app until done
+  domainExempt    Boolean   @default(false) // grandfathered past the org email-domain rule
   hlName1        String? // personal highlight preset 1 name
   hlColor1       String? // personal highlight preset 1 color (hex)
   hlName2        String? // personal highlight preset 2 name
@@ -156,6 +159,7 @@ model User {
 
   resets      PasswordReset[]
   nameChanges PendingNameChange[]
+  emailChanges PendingEmailChange[]
   groups        ProductGroup[]
   highlights    TaskHighlight[]
   ownedTasks    Task[]              @relation("OwnedTasks")
@@ -176,6 +180,20 @@ model PendingNameChange {
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   newName   String
+  codeHash  String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// A pending email change awaiting a code sent to the NEW address (ownership
+// proof). Mirrors PendingNameChange.
+model PendingEmailChange {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  newEmail  String
   codeHash  String
   attempts  Int      @default(0)
   expiresAt DateTime

@@ -9,7 +9,7 @@ export const GET = withAuth(async (user) => {
   const users = await prisma.user.findMany({
     where: { organizationId: user.oid },
     orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, email: true, role: true, viewAll: true, capPm: true, capOwner: true, capReviewer: true, lockedAt: true, createdAt: true },
+    select: { id: true, name: true, email: true, role: true, viewAll: true, capPm: true, capOwner: true, capReviewer: true, lockedAt: true, mustChangeEmail: true, domainExempt: true, createdAt: true },
   });
   return json({ users });
 });

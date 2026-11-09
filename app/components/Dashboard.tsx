@@ -2758,15 +2758,71 @@ function TeamsModal({ isAdmin, onClose, flash }: { isAdmin: boolean; onClose: ()
 }
 
 // ---------------- Org settings (admin) ----------------
-type OrgUser = { id: string; name: string; email: string; role: Role; lockedAt: string | null };
+type OrgUser = { id: string; name: string; email: string; role: Role; lockedAt: string | null; mustChangeEmail?: boolean; domainExempt?: boolean };
+
+function emailDom(email: string): string { return (email.split("@").pop() || "").toLowerCase(); }
 
 function OrgSettingsModal({ meId, onClose, flash }: { meId: string; onClose: () => void; flash: (m: string) => void }) {
   const [users, setUsers] = useState<OrgUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [domains, setDomains] = useState<string[]>([]);
+  const [savedDomains, setSavedDomains] = useState<string[]>([]);
+  const [domainInput, setDomainInput] = useState("");
+  const [savingDomains, setSavingDomains] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [reconBusy, setReconBusy] = useState(false);
+
   const load = useCallback(async () => {
-    try { const d = await api("/api/users"); setUsers(d.users || []); } catch (e) { flash((e as Error).message); } finally { setLoading(false); }
+    try {
+      const [u, o] = await Promise.all([api("/api/users"), api("/api/admin/org")]);
+      setUsers(u.users || []);
+      setDomains(o.allowedDomains || []);
+      setSavedDomains(o.allowedDomains || []);
+    } catch (e) { flash((e as Error).message); } finally { setLoading(false); }
   }, [flash]);
   useEffect(() => { load(); }, [load]);
+
+  const dirty = domains.join(",") !== savedDomains.join(",");
+
+  function addDomain() {
+    const d = domainInput.trim().toLowerCase().replace(/^@/, "");
+    if (!d) return;
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(d)) { flash("That does not look like a domain (e.g. acme.com)."); return; }
+    if (domains.includes(d)) { setDomainInput(""); return; }
+    setDomains([...domains, d]);
+    setDomainInput("");
+  }
+  function removeDomain(d: string) { setDomains(domains.filter((x) => x !== d)); }
+
+  async function saveDomains() {
+    setSavingDomains(true);
+    try {
+      const r = await api("/api/admin/org", { method: "PATCH", body: JSON.stringify({ allowedDomains: domains }) });
+      setDomains(r.allowedDomains || []);
+      setSavedDomains(r.allowedDomains || []);
+      flash((r.allowedDomains || []).length ? "Domain rule saved" : "Domain rule cleared (all domains allowed)");
+    } catch (e) { flash((e as Error).message); } finally { setSavingDomains(false); }
+  }
+
+  // Non-admin users who neither match the saved rule nor are grandfathered in.
+  const outside = savedDomains.length
+    ? users.filter((u) => u.role !== "ADMIN" && !u.domainExempt && !savedDomains.includes(emailDom(u.email)))
+    : [];
+
+  function togglePick(id: string) {
+    setPicked((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  async function reconcile(action: "allow" | "require") {
+    const ids = Array.from(picked).filter((id) => outside.some((u) => u.id === id));
+    if (!ids.length) { flash("Select at least one person first."); return; }
+    setReconBusy(true);
+    try {
+      await api("/api/admin/users/reconcile", { method: "POST", body: JSON.stringify({ userIds: ids, action }) });
+      setPicked(new Set());
+      await load();
+      flash(action === "allow" ? "Selected people allowed to stay" : "Selected people must change their email");
+    } catch (e) { flash((e as Error).message); } finally { setReconBusy(false); }
+  }
 
   async function setLocked(u: OrgUser, locked: boolean) {
     try { await api(`/api/admin/users/${u.id}/lock`, { method: "POST", body: JSON.stringify({ locked }) }); await load(); flash(locked ? `${u.name} locked out` : `${u.name} unlocked`); }
@@ -2779,8 +2835,54 @@ function OrgSettingsModal({ meId, onClose, flash }: { meId: string; onClose: () 
       <div className="modal" role="dialog" aria-modal="true">
         <div className="dhead"><h2>Org settings</h2><button className="iconbtn" onClick={onClose} aria-label="Close">✕</button></div>
         <div className="dbody">
-          <div className="hint" style={{ marginBottom: 10 }}>Organization-wide controls; more settings (such as email domain rules) will live here. For now, lock or unlock member accounts. A locked person is blocked immediately on their next action and signed out within a few seconds, and cannot get back in until you unlock them.</div>
-          <div className="hint" style={{ fontWeight: 600, margin: "6px 0 4px" }}>Member access</div>
+          {/* Email domains */}
+          <div className="hint" style={{ fontWeight: 600, margin: "2px 0 4px" }}>Email domains</div>
+          <div className="hint" style={{ marginBottom: 8 }}>Restrict who can join and which email addresses members may use. Leave this empty to allow any domain. New sign-ups and email changes that do not match are blocked.</div>
+          {loading ? <div className="hint">Loading…</div> : (
+            <>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {domains.length ? domains.map((d) => (
+                  <span key={d} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 8px", borderRadius: 999, background: "var(--surface-2)", border: "1px solid var(--border)", fontSize: 13 }}>
+                    @{d}
+                    <button className="iconbtn" style={{ fontSize: 12, lineHeight: 1 }} onClick={() => removeDomain(d)} aria-label={`Remove ${d}`}>✕</button>
+                  </span>
+                )) : <span className="hint">All domains allowed.</span>}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input value={domainInput} onChange={(e) => setDomainInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addDomain(); } }} placeholder="acme.com" style={{ flex: 1 }} />
+                <button className="btn sm" onClick={addDomain} disabled={!domainInput.trim()}>Add</button>
+                <button className="btn primary sm" onClick={saveDomains} disabled={!dirty || savingDomains}>{savingDomains ? "Saving…" : "Save"}</button>
+              </div>
+
+              {/* Reconcile existing users against the saved rule */}
+              {outside.length > 0 && (
+                <div style={{ marginTop: 14, padding: 10, borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface-2)" }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{outside.length} {outside.length === 1 ? "member does" : "members do"} not match the rule</div>
+                  <div className="hint" style={{ marginBottom: 8 }}>Allow them to keep their current email, or require them to switch to an approved address before they can continue.</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
+                    {outside.map((u) => (
+                      <label key={u.id} className="prow" style={{ padding: "5px 0", cursor: "pointer", alignItems: "center" }}>
+                        <input type="checkbox" checked={picked.has(u.id)} onChange={() => togglePick(u.id)} style={{ marginRight: 8 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <b>{u.name}</b>
+                          {u.mustChangeEmail ? <span style={{ fontSize: 11, marginLeft: 6, padding: "1px 6px", borderRadius: 999, background: "#f59e0b", color: "#1a1200" }}>Must change</span> : null}
+                          <div className="hint">{u.email} · {roleLabel(u.role)}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                    <button className="btn sm" onClick={() => reconcile("allow")} disabled={reconBusy || !picked.size}>Allow to stay</button>
+                    <button className="btn primary sm" onClick={() => reconcile("require")} disabled={reconBusy || !picked.size}>Require email change</button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Member access */}
+          <div className="hint" style={{ fontWeight: 600, margin: "18px 0 4px" }}>Member access</div>
+          <div className="hint" style={{ marginBottom: 8 }}>Lock or unlock accounts. A locked person is blocked immediately on their next action and signed out within a few seconds, and cannot get back in until you unlock them.</div>
           {loading ? <div className="hint">Loading…</div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {users.map((u) => (

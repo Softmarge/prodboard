@@ -85,6 +85,12 @@ export async function POST(req: Request) {
     if (await nameTaken(targetOrg.id, displayName)) {
       return error(`The display name “${displayName}” is already taken in this organization. Add an initial or use a different first name.`, 409);
     }
+    // Enforce the org's email-domain rule on new accounts joining an existing org.
+    const { domainAllowed } = await import("@/lib/domains");
+    const org = await prisma.organization.findUnique({ where: { id: targetOrg.id }, select: { allowedDomains: true } });
+    if (org && !domainAllowed(email, org.allowedDomains)) {
+      return error(`Your email must use an allowed domain for this organization (${org.allowedDomains.join(", ")}). Use your work email, or ask an admin.`, 403);
+    }
   }
 
   const code = code4();

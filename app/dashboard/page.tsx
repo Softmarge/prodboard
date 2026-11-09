@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import Dashboard from "@/app/components/Dashboard";
 import StagingGate from "@/app/components/StagingGate";
 import LockedOut from "@/app/components/LockedOut";
+import ChangeEmailRequired from "@/app/components/ChangeEmailRequired";
 import { stagingGateOn, stagingUnlockToken, STAGING_COOKIE } from "@/lib/staging";
 
 export const dynamic = "force-dynamic";
@@ -26,8 +27,9 @@ export default async function DashboardPage() {
   }
 
   // A locked account can't use the app.
-  const acct = await prisma.user.findUnique({ where: { id: user.uid }, select: { lockedAt: true } });
+  const acct = await prisma.user.findUnique({ where: { id: user.uid }, select: { lockedAt: true, mustChangeEmail: true } });
   if (acct?.lockedAt) return <LockedOut />;
+  if (acct?.mustChangeEmail) return <ChangeEmailRequired email={user.email} />;
 
   const leadRows = await prisma.teamLead.findMany({ where: { userId: user.uid }, select: { teamId: true } });
 
